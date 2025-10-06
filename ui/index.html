@@ -3,48 +3,190 @@
 <head>
   <meta charset="UTF-8" />
   <title>Search Demo UI</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; background: #fafafa; }
-    input { padding: 8px; width: 300px; font-size: 1rem; }
-    button { padding: 8px 12px; font-size: 1rem; margin-left: 5px; }
-    .results { margin-top: 1rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
-    .card { background: white; border-radius: 10px; padding: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .card h3 { font-size: 1.1rem; margin: 0; color: #222; }
-    .card .brand { color: #777; font-size: 0.9rem; }
-    .card .price { font-weight: bold; color: #008000; margin-top: 6px; }
+    :root { --bg:#0b0c10; --card:#121318; --muted:#8a8fa0; --accent:#4ad295; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:#e8ebf1; }
+    .container { max-width:1100px; margin: 24px auto; padding: 0 16px; }
+    header { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    input[type="text"] { flex:1; min-width:260px; padding:12px 14px; border-radius:12px; border:1px solid #2a2f3a; background:#0f1116; color:#e8ebf1; outline:none; }
+    button, select, label { border-radius:12px; border:1px solid #2a2f3a; background:#0f1116; color:#e8ebf1; padding:10px 12px; }
+    button { cursor:pointer; }
+    .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .muted { color: var(--muted); }
+    .results { margin-top:16px; display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap:14px; }
+    .card { background:var(--card); border:1px solid #1c2130; border-radius:16px; padding:14px; box-shadow: 0 6px 24px rgba(0,0,0,.25); display:flex; flex-direction:column; gap:8px; }
+    .name { font-weight:600; line-height:1.15; }
+    .brand { color:var(--muted); font-size:.92rem; }
+    .price { color:var(--accent); font-weight:700; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:.8rem; border:1px solid #253148; }
+    .ok { color:#9ae6b4; }
+    .warn { color:#f6ad55; }
+    .suggest-box { position:relative; flex:1; min-width:260px; }
+    .suggestions { position:absolute; top:44px; left:0; right:0; background:#0f1116; border:1px solid #2a2f3a; border-radius:12px; overflow:hidden; z-index:20; display:none; }
+    .suggestions.show { display:block; }
+    .sug-item { padding:10px 12px; cursor:pointer; }
+    .sug-item:hover, .sug-item.active { background:#141823; }
+    .toprow { display:flex; align-items:center; justify-content:space-between; margin-top:12px; }
+    .chips { display:flex; gap:8px; flex-wrap:wrap; }
+    .chip { border:1px solid #2a2f3a; background:#0f1116; padding:6px 10px; border-radius:999px; cursor:pointer; }
+    .chip.active { background:#17202f; border-color:#324159; }
+    .empty { padding:24px; text-align:center; border:1px dashed #2a2f3a; border-radius:12px; margin-top:18px; }
+    footer { margin:40px 0 16px; text-align:center; color:var(--muted); font-size:.9rem; }
   </style>
 </head>
 <body>
-  <h1>🔎 Search Demo</h1>
-  <input id="q" placeholder="Hae tuotteita..." />
-  <button onclick="doSearch()">Hae</button>
-  <div id="total"></div>
-  <div id="results" class="results"></div>
+  <div class="container">
+    <h1 style="margin:0 0 12px 0;">🔎 Search Demo</h1>
+
+    <header>
+      <div class="suggest-box">
+        <input id="q" type="text" placeholder="Hae tuotteita… (esim. painepesuri, vahashampoo)" autocomplete="off" />
+        <div id="sugs" class="suggestions"></div>
+      </div>
+      <div class="toolbar">
+        <label><input id="stock" type="checkbox" /> &nbsp;Vain varastossa</label>
+        <select id="sort">
+          <option value="">Relevanssi</option>
+          <option value="price_asc">Hinta ↑</option>
+          <option value="price_desc">Hinta ↓</option>
+          <option value="newest">Uusimmat</option>
+        </select>
+        <button id="searchBtn">Hae</button>
+      </div>
+    </header>
+
+    <div class="toprow">
+      <div id="total" class="muted">–</div>
+      <div class="chips" id="brandChips"></div>
+    </div>
+
+    <div id="results" class="results"></div>
+
+    <div id="empty" class="empty" style="display:none;">
+      Ei tuloksia. Kokeile toista hakusanaa tai poista suodattimia.
+    </div>
+
+    <footer>Powered by FastAPI + Elasticsearch</footer>
+  </div>
 
   <script>
-    const API = "https://search-demo.onrender.com"; // muuta jos Render-url eri
+    const API = window.API_BASE || location.origin; // toimii suoraan Renderissä
+    const els = {
+      q: document.getElementById('q'),
+      sugs: document.getElementById('sugs'),
+      stock: document.getElementById('stock'),
+      sort: document.getElementById('sort'),
+      total: document.getElementById('total'),
+      results: document.getElementById('results'),
+      empty: document.getElementById('empty'),
+      searchBtn: document.getElementById('searchBtn'),
+      brandChips: document.getElementById('brandChips'),
+    };
 
-    async function doSearch() {
-      const q = document.getElementById('q').value;
-      document.getElementById('results').innerHTML = "<em>Haetaan...</em>";
-      const res = await fetch(`${API}/search?q=${encodeURIComponent(q)}&size=12`);
-      const data = await res.json();
+    let state = { page: 1, size: 24, brand: null, category: null };
 
-      document.getElementById('total').textContent = `Tuloksia: ${data.total}`;
-      const resultsDiv = document.getElementById('results');
-      resultsDiv.innerHTML = "";
+    function htmlEscape(s){ return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-      data.hits.forEach(hit => {
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.innerHTML = `
-          <h3>${hit.name}</h3>
-          <div class="brand">${hit.brand || ''}</div>
-          <div class="price">${hit.price ? hit.price + ' €' : ''}</div>
-        `;
-        resultsDiv.appendChild(card);
-      });
+    async function fetchJSON(url){
+      const r = await fetch(url);
+      if(!r.ok) throw new Error(await r.text());
+      return r.json();
     }
+
+    function buildQuery(){
+      const params = new URLSearchParams();
+      const q = els.q.value.trim();
+      if(q) params.set('q', q);
+      params.set('page', state.page);
+      params.set('size', state.size);
+      if(els.stock.checked) params.set('in_stock', 'true');
+      if(state.brand) params.set('brand', state.brand);
+      if(state.category) params.set('category', state.category);
+      if(els.sort.value) params.set('sort', els.sort.value);
+      return params.toString();
+    }
+
+    async function doSearch(){
+      els.results.innerHTML = '<div class="muted">Haetaan…</div>';
+      els.empty.style.display = 'none';
+      els.brandChips.innerHTML = '';
+
+      try {
+        const data = await fetchJSON(`${API}/search?${buildQuery()}`);
+        els.total.textContent = `Tuloksia: ${data.total}`;
+        if(data.total === 0){
+          els.results.innerHTML = '';
+          els.empty.style.display = 'block';
+          return;
+        }
+
+        // Facet: brand chips (top 12)
+        const brands = (data.aggs?.brand ?? []).slice(0, 12);
+        brands.forEach(b => {
+          const chip = document.createElement('button');
+          chip.className = 'chip' + (state.brand === b.key ? ' active' : '');
+          chip.textContent = `${b.key} (${b.doc_count})`;
+          chip.onclick = () => { state.brand = (state.brand === b.key ? null : b.key); doSearch(); };
+          els.brandChips.appendChild(chip);
+        });
+
+        els.results.innerHTML = '';
+        data.hits.forEach(h => {
+          const card = document.createElement('div');
+          card.className = 'card';
+          const inStock = h.in_stock === true;
+          card.innerHTML = `
+            <div class="pill ${inStock ? 'ok' : 'warn'}">${inStock ? 'Varastossa' : 'Toimitus'}</div>
+            <div class="name">${htmlEscape(h.name)}</div>
+            <div class="brand">${htmlEscape(h.brand || '')}</div>
+            <div class="price">${(h.price ?? '') !== '' ? htmlEscape(h.price) + ' €' : ''}</div>
+          `;
+          els.results.appendChild(card);
+        });
+      } catch (e){
+        els.results.innerHTML = `<div class="muted">Virhe haussa: ${htmlEscape(e.message)}</div>`;
+      }
+    }
+
+    // Autocomplete
+    let sugIdx = -1;
+    async function suggest(){
+      const q = els.q.value.trim();
+      if(!q){ els.sugs.classList.remove('show'); els.sugs.innerHTML=''; return; }
+      try {
+        const data = await fetchJSON(`${API}/suggest?q=${encodeURIComponent(q)}&size=8`);
+        if(!data.length){ els.sugs.classList.remove('show'); els.sugs.innerHTML=''; return; }
+        els.sugs.innerHTML = data.map((d,i)=>`<div class="sug-item" data-name="${htmlEscape(d.name)}">${htmlEscape(d.name)} ${d.brand?`<span class="muted">(${htmlEscape(d.brand)})</span>`:''}</div>`).join('');
+        els.sugs.classList.add('show');
+        sugIdx = -1;
+      } catch(e){ /* silent */ }
+    }
+    els.sugs.addEventListener('click', (ev)=>{
+      const item = ev.target.closest('.sug-item');
+      if(!item) return;
+      els.q.value = item.dataset.name;
+      els.sugs.classList.remove('show');
+      doSearch();
+    });
+
+    // Events
+    els.q.addEventListener('input', () => { suggest(); });
+    els.q.addEventListener('keydown', (ev)=>{
+      const items = Array.from(els.sugs.querySelectorAll('.sug-item'));
+      if(!items.length) return;
+      if(ev.key === 'ArrowDown'){ ev.preventDefault(); sugIdx = Math.min(sugIdx+1, items.length-1); items.forEach((n,i)=>n.classList.toggle('active', i===sugIdx)); }
+      if(ev.key === 'ArrowUp'){ ev.preventDefault(); sugIdx = Math.max(sugIdx-1, 0); items.forEach((n,i)=>n.classList.toggle('active', i===sugIdx)); }
+      if(ev.key === 'Enter' && sugIdx >= 0){ ev.preventDefault(); items[sugIdx].click(); }
+      if(ev.key === 'Escape'){ els.sugs.classList.remove('show'); }
+    });
+    els.searchBtn.addEventListener('click', ()=>{ state.page=1; doSearch(); });
+    els.sort.addEventListener('change', ()=>{ state.page=1; doSearch(); });
+    els.stock.addEventListener('change', ()=>{ state.page=1; doSearch(); });
+
+    // Initial
+    doSearch();
   </script>
 </body>
 </html>
