@@ -1,3 +1,4 @@
-fastapi
-uvicorn
+fastapi==0.115.0
+uvicorn==0.30.6
 elasticsearch==8.*
+python-dotenv==1.0.1
