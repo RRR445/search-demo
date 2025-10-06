@@ -5,40 +5,80 @@
   <title>Search Demo UI</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    :root { --bg:#0b0c10; --card:#121318; --muted:#8a8fa0; --accent:#4ad295; }
+    :root {
+      --bg:#0b0c10; --card:#121318; --muted:#8a8fa0; --accent:#4ad295;
+      --violet:#b03478; --violet-dark:#932c66; --red:#e53935; --border:#1c2130;
+    }
     * { box-sizing: border-box; }
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:#e8ebf1; }
-    .container { max-width:1100px; margin: 24px auto; padding: 0 16px; }
+    .container { max-width:1200px; margin: 24px auto; padding: 0 16px; }
+    h1 { margin:0 0 12px 0; }
     header { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
     input[type="text"] { flex:1; min-width:260px; padding:12px 14px; border-radius:12px; border:1px solid #2a2f3a; background:#0f1116; color:#e8ebf1; outline:none; }
     button, select, label { border-radius:12px; border:1px solid #2a2f3a; background:#0f1116; color:#e8ebf1; padding:10px 12px; }
     button { cursor:pointer; }
     .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .muted { color: var(--muted); }
-    .results { margin-top:16px; display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap:14px; }
-    .card { background:var(--card); border:1px solid #1c2130; border-radius:16px; padding:14px; box-shadow: 0 6px 24px rgba(0,0,0,.25); display:flex; flex-direction:column; gap:8px; }
-    .name { font-weight:600; line-height:1.15; }
-    .brand { color:var(--muted); font-size:.92rem; }
-    .price { color:var(--accent); font-weight:700; }
-    .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:.8rem; border:1px solid #253148; }
-    .ok { color:#9ae6b4; }
-    .warn { color:#f6ad55; }
+
+    .toprow { display:flex; align-items:center; justify-content:space-between; margin-top:12px; gap:12px; flex-wrap:wrap; }
+    .chips { display:flex; gap:8px; flex-wrap:wrap; }
+    .chip { border:1px solid #2a2f3a; background:#0f1116; padding:6px 10px; border-radius:999px; cursor:pointer; }
+    .chip.active { background:#17202f; border-color:#324159; }
+
+    .results { margin-top:16px; display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:16px; }
+    .empty { padding:24px; text-align:center; border:1px dashed #2a2f3a; border-radius:12px; margin-top:18px; }
+    footer { margin:40px 0 16px; text-align:center; color:var(--muted); font-size:.9rem; }
+
+    /* --- Product card --- */
+    .product-card {
+      position: relative; background:#fff; color:#111; border-radius:10px; overflow:hidden;
+      border:1px solid #e9e9ee; display:flex; flex-direction:column; min-height:420px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.10);
+    }
+    .promo-banner {
+      background: var(--violet); color:#fff; text-align:center; font-size:.78rem; font-weight:800; padding:6px 8px;
+      letter-spacing:.3px;
+    }
+    .img-wrap { padding:10px 10px 0; display:flex; justify-content:center; align-items:center; }
+    .img-wrap img { width:100%; height:220px; object-fit:contain; background:#fafafa; border-radius:8px; }
+    .badge-discount {
+      position:absolute; top:14px; left:14px; background: var(--violet);
+      color:#fff; font-weight:900; padding:6px 10px; border-radius:6px; font-size:1rem;
+      box-shadow: 0 6px 14px rgba(176,52,120,.35);
+    }
+    .card-body { padding:12px 14px 0; display:flex; flex-direction:column; gap:6px; }
+    .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .stars { color:#ffb400; font-size:1.05rem; line-height:1; }
+    .review-count { color:#666; font-size:.95rem; }
+    .usp { display:flex; align-items:center; gap:6px; color:#2d6a4f; font-weight:700; }
+    .usp .checkbox { width:18px; height:18px; border-radius:4px; border:2px solid #2d6a4f; display:inline-block; position:relative; }
+    .usp .checkbox::after { content:""; position:absolute; width:10px; height:6px; border-left:3px solid #2d6a4f; border-bottom:3px solid #2d6a4f; transform:rotate(-45deg); left:2px; top:3px; }
+
+    .name { font-weight:900; font-size:1.05rem; line-height:1.2; margin-top:2px; }
+    .stock-pill { display:inline-block; padding:3px 8px; border-radius:999px; border:1px solid #c9d3dd; color:#2a6f3b; font-size:.8rem; background:#e9f7ef; }
+
+    .price-row { display:flex; justify-content:space-between; align-items:flex-end; margin-top:6px; }
+    .old-price { color:#777; text-decoration: line-through; font-size:1.0rem; }
+    .price-tag {
+      background: var(--red); color:#fff; font-weight:900; font-size:1.6rem; padding:6px 10px; border-radius:6px;
+      box-shadow: 0 8px 20px rgba(229,57,53,.35);
+    }
+
+    .buy-cta { background: var(--violet); color:#fff; padding:12px 12px; text-align:center; font-weight:900; letter-spacing:.3px;
+      border:0; border-top:1px solid #f0e2ea; cursor:pointer; margin-top:12px; }
+    .buy-cta:hover { background: var(--violet-dark); }
+
+    /* Autocomplete */
     .suggest-box { position:relative; flex:1; min-width:260px; }
     .suggestions { position:absolute; top:44px; left:0; right:0; background:#0f1116; border:1px solid #2a2f3a; border-radius:12px; overflow:hidden; z-index:20; display:none; }
     .suggestions.show { display:block; }
     .sug-item { padding:10px 12px; cursor:pointer; }
     .sug-item:hover, .sug-item.active { background:#141823; }
-    .toprow { display:flex; align-items:center; justify-content:space-between; margin-top:12px; }
-    .chips { display:flex; gap:8px; flex-wrap:wrap; }
-    .chip { border:1px solid #2a2f3a; background:#0f1116; padding:6px 10px; border-radius:999px; cursor:pointer; }
-    .chip.active { background:#17202f; border-color:#324159; }
-    .empty { padding:24px; text-align:center; border:1px dashed #2a2f3a; border-radius:12px; margin-top:18px; }
-    footer { margin:40px 0 16px; text-align:center; color:var(--muted); font-size:.9rem; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1 style="margin:0 0 12px 0;">🔎 Search Demo</h1>
+    <h1>🔎 Search Demo</h1>
 
     <header>
       <div class="suggest-box">
@@ -85,12 +125,12 @@
       brandChips: document.getElementById('brandChips'),
     };
 
-    let state = { page: 1, size: 24, brand: null, category: null };
+    let state = { page: 1, size: 24, brand: null, category: null, lastQueryId: null, results: {hits:[], aggs:{}} };
 
     function htmlEscape(s){ return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-    async function fetchJSON(url){
-      const r = await fetch(url);
+    async function fetchJSON(url, options){
+      const r = await fetch(url, options);
       if(!r.ok) throw new Error(await r.text());
       return r.json();
     }
@@ -108,6 +148,28 @@
       return params.toString();
     }
 
+    function fmtPrice(n){
+      if (n == null || n === '') return '';
+      const num = Number(n);
+      if (Number.isNaN(num)) return String(n);
+      return num.toFixed(2).replace('.', ',');
+    }
+
+    function guessImg(h){
+      return h.image || h.image_url || h.imageUrl || h.main_image || h.img || null;
+    }
+
+    function oldPriceOf(h){
+      return h.old_price || h.list_price || h.compare_at_price || h.price_old || null;
+    }
+
+    function discountPercent(price, oldPrice){
+      if(!price || !oldPrice) return null;
+      const p = Number(price), o = Number(oldPrice);
+      if(!isFinite(p) || !isFinite(o) || o <= 0 || p >= o) return null;
+      return Math.round((1 - (p/o)) * 100);
+    }
+
     async function doSearch(){
       els.results.innerHTML = '<div class="muted">Haetaan…</div>';
       els.empty.style.display = 'none';
@@ -115,6 +177,9 @@
 
       try {
         const data = await fetchJSON(`${API}/search?${buildQuery()}`);
+        state.results = data;
+        state.lastQueryId = data.queryId || null;
+
         els.total.textContent = `Tuloksia: ${data.total}`;
         if(data.total === 0){
           els.results.innerHTML = '';
@@ -128,26 +193,131 @@
           const chip = document.createElement('button');
           chip.className = 'chip' + (state.brand === b.key ? ' active' : '');
           chip.textContent = `${b.key} (${b.doc_count})`;
-          chip.onclick = () => { state.brand = (state.brand === b.key ? null : b.key); doSearch(); };
+          chip.onclick = () => { state.brand = (state.brand === b.key ? null : b.key); state.page=1; doSearch(); };
           els.brandChips.appendChild(chip);
         });
 
-        els.results.innerHTML = '';
-        data.hits.forEach(h => {
-          const card = document.createElement('div');
-          card.className = 'card';
-          const inStock = h.in_stock === true;
-          card.innerHTML = `
-            <div class="pill ${inStock ? 'ok' : 'warn'}">${inStock ? 'Varastossa' : 'Toimitus'}</div>
-            <div class="name">${htmlEscape(h.name)}</div>
-            <div class="brand">${htmlEscape(h.brand || '')}</div>
-            <div class="price">${(h.price ?? '') !== '' ? htmlEscape(h.price) + ' €' : ''}</div>
-          `;
-          els.results.appendChild(card);
-        });
+        renderResults(data.hits || []);
       } catch (e){
         els.results.innerHTML = `<div class="muted">Virhe haussa: ${htmlEscape(e.message)}</div>`;
       }
+    }
+
+    function renderResults(hits){
+      els.results.innerHTML = '';
+      hits.forEach(h => {
+        const imgUrl = guessImg(h);
+        const oldP = oldPriceOf(h);
+        const disc = discountPercent(h.price, oldP);
+        const rating = h.rating || h.review_rating || null;   // esim. 4.6
+        const reviews = h.reviews || h.review_count || null;  // esim. 10019
+        const inStock = h.in_stock === true;
+
+        const card = document.createElement('div');
+        card.className = 'product-card';
+
+        // banner
+        const banner = document.createElement('div');
+        banner.className = 'promo-banner';
+        banner.innerHTML = '⭐ SUPERSUOSIO!! MYYNTIMENESTYS!! HUIPPU-ARVOSTELUT!! ⭐';
+
+        // image
+        const imgWrap = document.createElement('div');
+        imgWrap.className = 'img-wrap';
+        const img = document.createElement('img');
+        img.src = imgUrl || 'https://via.placeholder.com/500x400?text=Ei+kuvaa';
+        img.alt = h.name || 'Tuote';
+        imgWrap.appendChild(img);
+
+        // discount badge
+        if (disc != null) {
+          const badge = document.createElement('div');
+          badge.className = 'badge-discount';
+          badge.textContent = `-${disc}%`;
+          card.appendChild(badge);
+        }
+
+        // body
+        const body = document.createElement('div');
+        body.className = 'card-body';
+
+        // rating line
+        if (reviews || rating) {
+          const line1 = document.createElement('div');
+          line1.className = 'line';
+          if (rating) {
+            const full = Math.round(Number(rating));
+            const stars = document.createElement('span');
+            stars.className = 'stars';
+            stars.textContent = '★'.repeat(full) + '☆'.repeat(Math.max(0, 5-full));
+            line1.appendChild(stars);
+          }
+          if (reviews) {
+            const rc = document.createElement('span');
+            rc.className = 'review-count';
+            rc.textContent = `(${reviews})`;
+            line1.appendChild(rc);
+          }
+          body.appendChild(line1);
+        }
+
+        // usp line
+        const line2 = document.createElement('div');
+        line2.className = 'line usp';
+        const cb = document.createElement('span');
+        cb.className = 'checkbox';
+        line2.appendChild(cb);
+        const uspTxt = document.createElement('span');
+        uspTxt.textContent = inStock ? 'HELPPOA SUOJAA!' : 'Nopea toimitus';
+        line2.appendChild(uspTxt);
+        body.appendChild(line2);
+
+        // name + stock pill
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.textContent = h.name || '';
+        body.appendChild(name);
+
+        const stock = document.createElement('div');
+        stock.className = 'stock-pill';
+        stock.textContent = inStock ? 'Varastossa' : 'Tilaustuote';
+        body.appendChild(stock);
+
+        // price row
+        const priceRow = document.createElement('div');
+        priceRow.className = 'price-row';
+        const left = document.createElement('div');
+        if (oldP) {
+          const op = document.createElement('div');
+          op.className = 'old-price';
+          op.textContent = `${fmtPrice(oldP)} €`;
+          left.appendChild(op);
+        }
+        const right = document.createElement('div');
+        right.className = 'price-tag';
+        right.textContent = `${fmtPrice(h.price)} €`;
+        priceRow.append(left, right);
+        body.appendChild(priceRow);
+
+        // CTA
+        const btn = document.createElement('button');
+        btn.className = 'buy-cta';
+        btn.textContent = 'OSTA';
+        btn.addEventListener('click', async () => {
+          // klikkiloki
+          try {
+            const productId = h.id || h.sku || h._id || '';
+            if (productId && state.lastQueryId) {
+              await fetch(`${API}/click?product_id=${encodeURIComponent(productId)}&queryId=${encodeURIComponent(state.lastQueryId)}`, { method:'POST' });
+            }
+          } catch(_) {}
+          btn.textContent = '✅ LISÄTTY';
+          setTimeout(()=>btn.textContent='OSTA', 1200);
+        });
+
+        card.append(banner, imgWrap, body, btn);
+        els.results.appendChild(card);
+      });
     }
 
     // Autocomplete
@@ -168,46 +338,47 @@
       if(!item) return;
       els.q.value = item.dataset.name;
       els.sugs.classList.remove('show');
+      state.page = 1;
       doSearch();
     });
 
     // Events
     els.q.addEventListener('input', () => { suggest(); });
     els.q.addEventListener('keydown', (ev)=>{
-  const items = Array.from(els.sugs.querySelectorAll('.sug-item'));
+      const items = Array.from(els.sugs.querySelectorAll('.sug-item'));
 
-  if (ev.key === 'ArrowDown' && items.length) {
-    ev.preventDefault();
-    sugIdx = Math.min(sugIdx + 1, items.length - 1);
-    items.forEach((n,i)=>n.classList.toggle('active', i===sugIdx));
-    return;
-  }
-
-  if (ev.key === 'ArrowUp' && items.length) {
-    ev.preventDefault();
-    sugIdx = Math.max(sugIdx - 1, 0);
-    items.forEach((n,i)=>n.classList.toggle('active', i===sugIdx));
-    return;
-  }
-
-  if (ev.key === 'Enter') {
-    ev.preventDefault();
-    // Jos ehdotus aktiivinen -> valitse se
-    if (sugIdx >= 0 && items.length) {
-      items[sugIdx].click();
-    } else {
-      // Muuten tee suora haku nykyisellä tekstillä
-      els.sugs.classList.remove('show');
-      state.page = 1;
-      doSearch();
-    }
-    return;
-  }
-
-  if (ev.key === 'Escape') {
-    els.sugs.classList.remove('show');
-  }
-});
+      if (ev.key === 'ArrowDown' && items.length) {
+        ev.preventDefault();
+        sugIdx = Math.min(sugIdx + 1, items.length - 1);
+        items.forEach((n,i)=>n.classList.toggle('active', i===sugIdx));
+        return;
+      }
+      if (ev.key === 'ArrowUp' && items.length) {
+        ev.preventDefault();
+        sugIdx = Math.max(sugIdx - 1, 0);
+        items.forEach((n,i)=>n.classList.toggle('active', i===sugIdx));
+        return;
+      }
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        if (sugIdx >= 0 && items.length) {
+          items[sugIdx].click();  // valitse ehdotus
+        } else {
+          els.sugs.classList.remove('show'); // suora haku
+          state.page = 1;
+          doSearch();
+        }
+        return;
+      }
+      if (ev.key === 'Escape') {
+        els.sugs.classList.remove('show');
+      }
+    });
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.suggest-box')) {
+        els.sugs.classList.remove('show');
+      }
+    });
 
     els.searchBtn.addEventListener('click', ()=>{ state.page=1; doSearch(); });
     els.sort.addEventListener('change', ()=>{ state.page=1; doSearch(); });
