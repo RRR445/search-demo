@@ -20,8 +20,22 @@ ES_URL = os.getenv("ELASTIC_URL")
 ES_KEY = os.getenv("ELASTIC_API_KEY")
 INDEX = os.getenv("ELASTIC_INDEX", "products")
 
+
+def _init_es_client() -> Elasticsearch | None:
+    """Create the Elasticsearch client when configuration is present."""
+
+    if not ES_URL or not ES_KEY:
+        return None
+
+    try:
+        return Elasticsearch(ES_URL, api_key=ES_KEY)
+    except ValueError:
+        # Misconfiguration is treated as service unavailable at runtime.
+        return None
+
+
 # ---- Elasticsearch client ----
-es = Elasticsearch(ES_URL, api_key=ES_KEY)
+es = _init_es_client()
 
 # ---- FastAPI app + CORS ----
 app = FastAPI(title="Search Demo API", version="1.0.0")
@@ -34,21 +48,22 @@ app.add_middleware(
 )
 
 # ---- Ensure the event index exists ----
-with contextlib.suppress(Exception):  # pragma: no cover - initialization best-effort
-    es.indices.create(
-        index="search_events",
-        ignore=400,
-        mappings={
-            "properties": {
-                "ts": {"type": "date"},
-                "type": {"type": "keyword"},
-                "query": {"type": "keyword"},
-                "queryId": {"type": "keyword"},
-                "product_id": {"type": "keyword"},
-                "meta": {"type": "object", "enabled": False},
-            }
-        },
-    )
+if es is not None:
+    with contextlib.suppress(Exception):  # pragma: no cover - initialization best-effort
+        es.indices.create(
+            index="search_events",
+            ignore=400,
+            mappings={
+                "properties": {
+                    "ts": {"type": "date"},
+                    "type": {"type": "keyword"},
+                    "query": {"type": "keyword"},
+                    "queryId": {"type": "keyword"},
+                    "product_id": {"type": "keyword"},
+                    "meta": {"type": "object", "enabled": False},
+                }
+            },
+        )
 
 
 class SearchResponse(BaseModel):
@@ -66,6 +81,14 @@ def _raise_service_unavailable(error: Exception) -> None:
     raise HTTPException(status_code=503, detail="Search backend unavailable") from error
 
 
+def _get_es_client() -> Elasticsearch:
+    """Return the configured Elasticsearch client or raise if unavailable."""
+
+    if es is None:
+        raise HTTPException(status_code=503, detail="Search backend unavailable")
+    return es
+
+
 @app.get("/")
 def root() -> dict[str, str]:
     """Return basic service metadata."""
@@ -78,7 +101,7 @@ def health() -> dict[str, Any]:
     """Verify the API can reach Elasticsearch."""
 
     try:
-        info = es.info()
+        info = _get_es_client().info()
     except TransportError as error:
         _raise_service_unavailable(error)
 
@@ -95,7 +118,7 @@ def suggest(q: str, size: int = 8) -> list[dict[str, Any]]:
     }
 
     try:
-        resp = es.search(
+        resp = _get_es_client().search(
             index=INDEX,
             body={
                 **base_body,
@@ -106,7 +129,7 @@ def suggest(q: str, size: int = 8) -> list[dict[str, Any]]:
         # Missing analyzer/field? fall back to prefix search. Otherwise bubble up.
         if getattr(error, "status_code", None) == 400:
             try:
-                resp = es.search(
+                resp = _get_es_client().search(
                     index=INDEX,
                     body={
                         **base_body,
@@ -214,7 +237,7 @@ def search(
         body["sort"] = sort_clause
 
     try:
-        resp = es.search(index=INDEX, body=body)
+        resp = _get_es_client().search(index=INDEX, body=body)
     except TransportError as error:
         _raise_service_unavailable(error)
 
@@ -230,7 +253,7 @@ def search(
 
     query_id = str(uuid4())
     with contextlib.suppress(TransportError):
-        es.index(
+        _get_es_client().index(
             index="search_events",
             document={
                 "ts": datetime.utcnow(),
@@ -248,7 +271,7 @@ def click(product_id: str, queryId: str) -> dict[str, bool]:
     """Record a click event for relevance analysis."""
 
     try:
-        es.index(
+        _get_es_client().index(
             index="search_events",
             document={
                 "ts": datetime.utcnow(),
