@@ -1,3 +1,7 @@
+import pytest
+
+pytest.importorskip("httpx")
+
 from fastapi.testclient import TestClient
 
 import app as search_app
