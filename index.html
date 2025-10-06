@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Search Demo UI</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; background: #fafafa; }
+    input { padding: 8px; width: 300px; font-size: 1rem; }
+    button { padding: 8px 12px; font-size: 1rem; margin-left: 5px; }
+    .results { margin-top: 1rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
+    .card { background: white; border-radius: 10px; padding: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .card h3 { font-size: 1.1rem; margin: 0; color: #222; }
+    .card .brand { color: #777; font-size: 0.9rem; }
+    .card .price { font-weight: bold; color: #008000; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h1>🔎 Search Demo</h1>
+  <input id="q" placeholder="Hae tuotteita..." />
+  <button onclick="doSearch()">Hae</button>
+  <div id="total"></div>
+  <div id="results" class="results"></div>
+
+  <script>
+    const API = "https://search-demo.onrender.com"; // muuta jos Render-url eri
+
+    async function doSearch() {
+      const q = document.getElementById('q').value;
+      document.getElementById('results').innerHTML = "<em>Haetaan...</em>";
+      const res = await fetch(`${API}/search?q=${encodeURIComponent(q)}&size=12`);
+      const data = await res.json();
+
+      document.getElementById('total').textContent = `Tuloksia: ${data.total}`;
+      const resultsDiv = document.getElementById('results');
+      resultsDiv.innerHTML = "";
+
+      data.hits.forEach(hit => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <h3>${hit.name}</h3>
+          <div class="brand">${hit.brand || ''}</div>
+          <div class="price">${hit.price ? hit.price + ' €' : ''}</div>
+        `;
+        resultsDiv.appendChild(card);
+      });
+    }
+  </script>
+</body>
+</html>
