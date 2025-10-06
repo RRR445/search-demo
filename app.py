@@ -3,6 +3,7 @@
 import contextlib
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -10,6 +11,8 @@ from dotenv import load_dotenv
 from elasticsearch import Elasticsearch, TransportError
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Load environment variables from a local .env file when present.
@@ -46,19 +49,22 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
-from pathlib import Path
 
-# Serve static UI files from /ui folder
-app.mount("/ui", StaticFiles(directory="ui", html=True), name="ui")
+BASE_DIR = Path(__file__).resolve().parent
+UI_DIR = BASE_DIR / "ui"
 
-# Serve index.html directly (fallback)
+if UI_DIR.exists():
+    app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui.index")
+
+
 @app.get("/index.html", response_class=HTMLResponse)
-def serve_index():
-    path = Path("ui/index.html")
-    if path.exists():
-        return path.read_text(encoding="utf-8")
+def serve_index() -> str:
+    """Serve the bundled UI index file when present."""
+
+    for candidate in (UI_DIR / "index.html", BASE_DIR / "index.html"):
+        if candidate.exists():
+            return candidate.read_text(encoding="utf-8")
+
     return "<h1>index.html not found</h1>"
 
 
