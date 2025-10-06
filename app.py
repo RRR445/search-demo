@@ -77,3 +77,27 @@ def search(
     total = resp["hits"]["total"]["value"]
     aggs  = {k: v["buckets"] for k, v in (resp.get("aggregations") or {}).items()}
     return {"total": total, "hits": hits, "aggs": aggs}
+    @app.get("/suggest")
+def suggest(q: str, size: int = 8):
+    """
+    Palauttaa nopeita ehdotuksia kirjoituksen aikana.
+    Jos indekissä on analysoitu 'name.ac' (edge-ngram), käytetään sitä.
+    Muuten fallback: match_phrase_prefix name-kenttään.
+    """
+    try:
+        body = {
+          "size": size,
+          "_source": ["id","sku","name","brand","price","in_stock"],
+          "query": { "match": { "name.ac": { "query": q, "operator": "and" } } }
+        }
+        resp = es.search(index=INDEX, body=body)
+    except Exception:
+        body = {
+          "size": size,
+          "_source": ["id","sku","name","brand","price","in_stock"],
+          "query": { "match_phrase_prefix": { "name": { "query": q } } }
+        }
+        resp = es.search(index=INDEX, body=body)
+
+    return [h["_source"] | {"_id": h["_id"]} for h in resp["hits"]["hits"]]
+
