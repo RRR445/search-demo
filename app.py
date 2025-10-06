@@ -46,6 +46,21 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from pathlib import Path
+
+# Serve static UI files from /ui folder
+app.mount("/ui", StaticFiles(directory="ui", html=True), name="ui")
+
+# Serve index.html directly (fallback)
+@app.get("/index.html", response_class=HTMLResponse)
+def serve_index():
+    path = Path("ui/index.html")
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return "<h1>index.html not found</h1>"
+
 
 # ---- Ensure the event index exists ----
 if es is not None:
