@@ -1,5 +1,6 @@
-from pathlib import Path
 import sys
+from importlib import import_module
+from pathlib import Path
 
 import pytest
 
@@ -11,7 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-import app as search_app
+search_app = import_module("app")
 
 
 class FakeES:
