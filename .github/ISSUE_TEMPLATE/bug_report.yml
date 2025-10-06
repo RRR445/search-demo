@@ -1,0 +1,28 @@
+name: Bug report
+description: Report a bug or regression
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: What happened and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include curl commands, payloads, or environment details.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste relevant output or attach screenshots.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: e.g. local, staging, production

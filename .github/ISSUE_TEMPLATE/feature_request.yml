@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest an enhancement or new capability
+labels: [enhancement]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Briefly describe the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why is this change valuable?
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Outline how you imagine implementing it.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: input
+    id: additional
+    attributes:
+      label: Additional context
