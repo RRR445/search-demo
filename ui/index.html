@@ -174,13 +174,41 @@
     // Events
     els.q.addEventListener('input', () => { suggest(); });
     els.q.addEventListener('keydown', (ev)=>{
-      const items = Array.from(els.sugs.querySelectorAll('.sug-item'));
-      if(!items.length) return;
-      if(ev.key === 'ArrowDown'){ ev.preventDefault(); sugIdx = Math.min(sugIdx+1, items.length-1); items.forEach((n,i)=>n.classList.toggle('active', i===sugIdx)); }
-      if(ev.key === 'ArrowUp'){ ev.preventDefault(); sugIdx = Math.max(sugIdx-1, 0); items.forEach((n,i)=>n.classList.toggle('active', i===sugIdx)); }
-      if(ev.key === 'Enter' && sugIdx >= 0){ ev.preventDefault(); items[sugIdx].click(); }
-      if(ev.key === 'Escape'){ els.sugs.classList.remove('show'); }
-    });
+  const items = Array.from(els.sugs.querySelectorAll('.sug-item'));
+
+  if (ev.key === 'ArrowDown' && items.length) {
+    ev.preventDefault();
+    sugIdx = Math.min(sugIdx + 1, items.length - 1);
+    items.forEach((n,i)=>n.classList.toggle('active', i===sugIdx));
+    return;
+  }
+
+  if (ev.key === 'ArrowUp' && items.length) {
+    ev.preventDefault();
+    sugIdx = Math.max(sugIdx - 1, 0);
+    items.forEach((n,i)=>n.classList.toggle('active', i===sugIdx));
+    return;
+  }
+
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    // Jos ehdotus aktiivinen -> valitse se
+    if (sugIdx >= 0 && items.length) {
+      items[sugIdx].click();
+    } else {
+      // Muuten tee suora haku nykyisellä tekstillä
+      els.sugs.classList.remove('show');
+      state.page = 1;
+      doSearch();
+    }
+    return;
+  }
+
+  if (ev.key === 'Escape') {
+    els.sugs.classList.remove('show');
+  }
+});
+
     els.searchBtn.addEventListener('click', ()=>{ state.page=1; doSearch(); });
     els.sort.addEventListener('change', ()=>{ state.page=1; doSearch(); });
     els.stock.addEventListener('change', ()=>{ state.page=1; doSearch(); });
