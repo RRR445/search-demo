@@ -1,3 +1,4 @@
+import os
 import sys
 from importlib import import_module
 from pathlib import Path
@@ -11,6 +12,10 @@ from fastapi.testclient import TestClient
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+os.environ.setdefault("ELASTIC_URL", "https://example.com:443")
+os.environ.setdefault("ELASTIC_API_KEY", "test-api-key")
+os.environ.setdefault("ELASTIC_INDEX", "products")
 
 search_app = import_module("app")
 
