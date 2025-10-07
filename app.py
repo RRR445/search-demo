@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import contextlib
-import os
 from datetime import datetime
+import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -18,10 +18,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 
-# Load envs from local .env when developing
 load_dotenv()
 
-# ---- Environment variables ----
 ES_URL = os.getenv("ELASTIC_URL")
 ES_KEY = os.getenv("ELASTIC_API_KEY")
 INDEX = os.getenv("ELASTIC_INDEX", "products")
@@ -37,20 +35,17 @@ def _init_es_client() -> Elasticsearch | None:
         return None
 
 
-# ---- Elasticsearch client (lazy / best-effort) ----
 es = _init_es_client()
 
-# ---- FastAPI app + CORS ----
 app = FastAPI(title="Search Demo API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: rajaa tuotannossa omaan domainiin
+    allow_origins=["*"],  # TODO: rajaa tuotantoon omaan domainiin
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# ---- Static UI mount ----
 BASE_DIR = Path(__file__).resolve().parent
 UI_DIR = BASE_DIR / "ui"
 if UI_DIR.exists():
@@ -72,7 +67,6 @@ def favicon() -> Response:
     return Response(status_code=204)
 
 
-# ---- Create event index (best-effort) ----
 if es is not None:
     with contextlib.suppress(Exception):
         es.indices.create(
