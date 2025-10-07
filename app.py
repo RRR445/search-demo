@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import contextlib
-from datetime import datetime
 import os
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -15,18 +15,19 @@ from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-
+# --- env ---
 load_dotenv()
-
 ES_URL = os.getenv("ELASTIC_URL")
 ES_KEY = os.getenv("ELASTIC_API_KEY")
 INDEX = os.getenv("ELASTIC_INDEX", "products")
 
+SETTINGS_INDEX = "search_settings"
+SETTINGS_ID = "default"
+
 
 def _init_es_client() -> Elasticsearch | None:
-    """Create the Elasticsearch client when configuration is present."""
     if not ES_URL or not ES_KEY:
         return None
     try:
@@ -37,15 +38,17 @@ def _init_es_client() -> Elasticsearch | None:
 
 es = _init_es_client()
 
-app = FastAPI(title="Search Demo API", version="1.0.0")
+# --- app ---
+app = FastAPI(title="Search Demo API", version="1.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: rajaa tuotantoon omaan domainiin
+    allow_origins=["*"],  # TODO: rajaa tuotantodomainiin
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT"],
     allow_headers=["*"],
 )
 
+# --- static UI ---
 BASE_DIR = Path(__file__).resolve().parent
 UI_DIR = BASE_DIR / "ui"
 if UI_DIR.exists():
@@ -54,7 +57,6 @@ if UI_DIR.exists():
 
 @app.get("/index.html", response_class=HTMLResponse)
 def serve_index() -> str:
-    """Serve index.html for UI."""
     for candidate in (UI_DIR / "index.html", BASE_DIR / "index.html"):
         if candidate.exists():
             return candidate.read_text(encoding="utf-8")
@@ -63,10 +65,10 @@ def serve_index() -> str:
 
 @app.get("/favicon.ico")
 def favicon() -> Response:
-    """Silence favicon requests."""
     return Response(status_code=204)
 
 
+# --- indices (best-effort) ---
 if es is not None:
     with contextlib.suppress(Exception):
         es.indices.create(
@@ -83,17 +85,18 @@ if es is not None:
                 }
             },
         )
-
-
-class SearchResponse(BaseModel):
-    total: int
-    hits: list[dict[str, Any]]
-    aggs: dict[str, Any] | None = None
-    queryId: str | None = None
-
-
-def _raise_service_unavailable(error: Exception) -> None:
-    raise HTTPException(status_code=503, detail="Search backend unavailable") from error
+    with contextlib.suppress(Exception):
+        es.indices.create(
+            index=SETTINGS_INDEX,
+            ignore=400,
+            mappings={
+                "properties": {
+                    "weights": {"type": "object", "enabled": True},
+                    "brand_boosts": {"type": "object", "enabled": True},
+                    "updated_at": {"type": "date"},
+                }
+            },
+        )
 
 
 def _get_es_client() -> Elasticsearch:
@@ -102,6 +105,58 @@ def _get_es_client() -> Elasticsearch:
     return es
 
 
+def _raise_service_unavailable(error: Exception) -> None:
+    raise HTTPException(status_code=503, detail="Search backend unavailable") from error
+
+
+# --- settings model & defaults ---
+class Weights(BaseModel):
+    rating: float = Field(0.4, ge=0, description="field_value_factor for rating (0..5)")
+    reviews: float = Field(0.2, ge=0, description="weight for reviews (log1p)")
+    sales_30d: float = Field(0.8, ge=0, description="weight for recent sales (log1p)")
+    in_stock_bonus: float = Field(1.3, ge=0, description="extra weight when in_stock=True")
+    newness_decay_days: int = Field(45, ge=1, description="gauss decay window in days")
+
+
+class Settings(BaseModel):
+    weights: Weights = Weights()
+    brand_boosts: Dict[str, float] = Field(
+        default_factory=lambda: {"purelux": 1.2, "autodude": 1.1}
+    )
+
+
+DEFAULT_SETTINGS = Settings()
+
+
+def load_settings() -> Settings:
+    try:
+        doc = _get_es_client().get(index=SETTINGS_INDEX, id=SETTINGS_ID, ignore=[404])
+        if doc and doc.get("found"):
+            src = doc["_source"]
+            return Settings(**src)
+    except TransportError:
+        pass
+    return DEFAULT_SETTINGS
+
+
+def save_settings(s: Settings) -> None:
+    _get_es_client().index(
+        index=SETTINGS_INDEX,
+        id=SETTINGS_ID,
+        document={**s.model_dump(), "updated_at": datetime.utcnow()},
+        refresh="wait_for",
+    )
+
+
+# --- API models ---
+class SearchResponse(BaseModel):
+    total: int
+    hits: list[dict[str, Any]]
+    aggs: dict[str, Any] | None = None
+    queryId: str | None = None
+
+
+# --- routes ---
 @app.get("/")
 def root() -> dict[str, str]:
     return {"name": "search-demo", "version": app.version or "unknown"}
@@ -116,6 +171,23 @@ def health() -> dict[str, Any]:
     return {"ok": True, "es_version": info["version"]["number"]}
 
 
+# Settings endpoints
+@app.get("/settings", response_model=Settings)
+def get_settings() -> Settings:
+    return load_settings()
+
+
+@app.post("/settings", response_model=Settings)
+def update_settings(payload: Settings) -> Settings:
+    # Tallennus ES:ään
+    try:
+        save_settings(payload)
+        return payload
+    except TransportError as error:
+        _raise_service_unavailable(error)
+
+
+# Suggest
 @app.get("/suggest")
 def suggest(q: str, size: int = 8) -> list[dict[str, Any]]:
     base_body = {
@@ -125,20 +197,14 @@ def suggest(q: str, size: int = 8) -> list[dict[str, Any]]:
     try:
         resp = _get_es_client().search(
             index=INDEX,
-            body={
-                **base_body,
-                "query": {"match": {"name.ac": {"query": q, "operator": "and"}}},
-            },
+            body={**base_body, "query": {"match": {"name.ac": {"query": q, "operator": "and"}}}},
         )
     except TransportError as error:
         if getattr(error, "status_code", None) == 400:
             try:
                 resp = _get_es_client().search(
                     index=INDEX,
-                    body={
-                        **base_body,
-                        "query": {"match_phrase_prefix": {"name": {"query": q}}},
-                    },
+                    body={**base_body, "query": {"match_phrase_prefix": {"name": {"query": q}}}},
                 )
             except TransportError as fallback_error:
                 _raise_service_unavailable(fallback_error)
@@ -148,18 +214,21 @@ def suggest(q: str, size: int = 8) -> list[dict[str, Any]]:
     return [hit["_source"] | {"_id": hit["_id"]} for hit in resp["hits"]["hits"]]
 
 
+# Search that uses settings-based scoring
 @app.get("/search", response_model=SearchResponse)
 def search(
     q: str = Query("", description="Hakusana"),
     page: int = Query(1, ge=1),
     size: int = Query(24, ge=1, le=100),
-    in_stock: bool | None = Query(None),
-    brand: str | None = Query(None),
-    category: str | None = Query(None),
-    min_price: float | None = Query(None),
-    max_price: float | None = Query(None),
-    sort: str | None = Query(None, description="relevance | price_asc | price_desc | newest"),
+    in_stock: Optional[bool] = Query(None),
+    brand: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    min_price: Optional[float] = Query(None),
+    max_price: Optional[float] = Query(None),
+    sort: Optional[str] = Query(None, description="relevance | price_asc | price_desc | newest"),
 ) -> SearchResponse:
+    s = load_settings()  # haetaan aina (voi myöhemmin cachettaa)
+
     must: list[dict[str, Any]] = []
     if q:
         must.append(
@@ -197,6 +266,55 @@ def search(
     elif sort == "newest":
         sort_clause = [{"added_at": "desc"}]
 
+    # Build scoring functions from settings
+    functions: list[dict[str, Any]] = [
+        {"weight": s.weights.in_stock_bonus, "filter": {"term": {"in_stock": True}}},
+        {
+            "gauss": {
+                "added_at": {
+                    "origin": "now",
+                    "scale": f"{s.weights.newness_decay_days}d",
+                    "decay": 0.5,
+                }
+            }
+        },
+        # Rating 0..5 (no modifier)
+        {
+            "field_value_factor": {
+                "field": "rating",
+                "factor": s.weights.rating,
+                "missing": 0.0,
+            }
+        },
+        # Reviews -> log1p to normalize big counts
+        {
+            "field_value_factor": {
+                "field": "reviews",
+                "factor": s.weights.reviews,
+                "modifier": "log1p",
+                "missing": 0.0,
+            }
+        },
+        # Recent sales (e.g. last 30d)
+        {
+            "field_value_factor": {
+                "field": "sales_30d",
+                "factor": s.weights.sales_30d,
+                "modifier": "log1p",
+                "missing": 0.0,
+            }
+        },
+    ]
+
+    # Brand boosts from settings (keyword field recommended)
+    if s.brand_boosts:
+        for bname, w in s.brand_boosts.items():
+            try:
+                w_float = float(w)
+            except Exception:
+                continue
+            functions.append({"filter": {"term": {"brand": bname.lower()}}, "weight": w_float})
+
     body: dict[str, Any] = {
         "from": (page - 1) * size,
         "size": size,
@@ -205,10 +323,7 @@ def search(
                 "query": {"bool": {"must": must or {"match_all": {}}, "filter": filters}},
                 "score_mode": "sum",
                 "boost_mode": "multiply",
-                "functions": [
-                    {"weight": 1.3, "filter": {"term": {"in_stock": True}}},
-                    {"gauss": {"added_at": {"origin": "now", "scale": "45d", "decay": 0.5}}},
-                ],
+                "functions": functions,
             }
         },
         "aggs": {
