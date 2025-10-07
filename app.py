@@ -18,9 +18,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 
+# Load envs from local .env when developing
 load_dotenv()
 
-
+# ---- Environment variables ----
 ES_URL = os.getenv("ELASTIC_URL")
 ES_KEY = os.getenv("ELASTIC_API_KEY")
 INDEX = os.getenv("ELASTIC_INDEX", "products")
@@ -36,19 +37,20 @@ def _init_es_client() -> Elasticsearch | None:
         return None
 
 
+# ---- Elasticsearch client (lazy / best-effort) ----
 es = _init_es_client()
 
-
+# ---- FastAPI app + CORS ----
 app = FastAPI(title="Search Demo API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: rajaa tuotantoon omaan domainiin
+    allow_origins=["*"],  # TODO: rajaa tuotannossa omaan domainiin
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-
+# ---- Static UI mount ----
 BASE_DIR = Path(__file__).resolve().parent
 UI_DIR = BASE_DIR / "ui"
 if UI_DIR.exists():
@@ -70,6 +72,7 @@ def favicon() -> Response:
     return Response(status_code=204)
 
 
+# ---- Create event index (best-effort) ----
 if es is not None:
     with contextlib.suppress(Exception):
         es.indices.create(
@@ -234,7 +237,10 @@ def search(
         for hit in resp["hits"]["hits"]
     ]
     total = resp["hits"]["total"]["value"]
-    aggs = {key: (value.get("buckets", value)) for key, value in (resp.get("aggregations") or {}).items()}
+    aggs = {
+        key: (value.get("buckets", value))
+        for key, value in (resp.get("aggregations") or {}).items()
+    }
 
     query_id = str(uuid4())
     with contextlib.suppress(TransportError):
