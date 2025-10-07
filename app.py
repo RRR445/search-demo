@@ -39,10 +39,10 @@ def _init_es_client() -> Elasticsearch | None:
 es = _init_es_client()
 
 # --- app ---
-app = FastAPI(title="Search Demo API", version="1.1.0")
+app = FastAPI(title="Search Demo API", version="1.2.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: rajaa tuotantodomainiin
+    allow_origins=["*"],  # TODO: rajaa tuotantoon
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT"],
     allow_headers=["*"],
@@ -93,6 +93,7 @@ if es is not None:
                 "properties": {
                     "weights": {"type": "object", "enabled": True},
                     "brand_boosts": {"type": "object", "enabled": True},
+                    "field_names": {"type": "object", "enabled": True},
                     "updated_at": {"type": "date"},
                 }
             },
@@ -111,11 +112,24 @@ def _raise_service_unavailable(error: Exception) -> None:
 
 # --- settings model & defaults ---
 class Weights(BaseModel):
-    rating: float = Field(0.4, ge=0, description="field_value_factor for rating (0..5)")
-    reviews: float = Field(0.2, ge=0, description="weight for reviews (log1p)")
-    sales_30d: float = Field(0.8, ge=0, description="weight for recent sales (log1p)")
-    in_stock_bonus: float = Field(1.3, ge=0, description="extra weight when in_stock=True")
-    newness_decay_days: int = Field(45, ge=1, description="gauss decay window in days")
+    rating: float = Field(0.4, ge=0)
+    reviews: float = Field(0.2, ge=0)
+    sales_30d: float = Field(0.8, ge=0)
+    in_stock_bonus: float = Field(1.3, ge=0)
+    newness_decay_days: int = Field(45, ge=1)
+
+
+class FieldNames(BaseModel):
+    rating_field: str | None = "rating"
+    reviews_field: str | None = "reviews"
+    sales30_field: str | None = "sales_30d"
+    added_at_field: str | None = "added_at"
+    brand_field: str | None = "brand"
+    category_field: str | None = "category_path"
+    in_stock_field: str | None = "in_stock"
+    price_field: str | None = "price"
+    image_field: str | None = "image"
+    image_url_field: str | None = "image_url"
 
 
 class Settings(BaseModel):
@@ -123,6 +137,7 @@ class Settings(BaseModel):
     brand_boosts: Dict[str, float] = Field(
         default_factory=lambda: {"purelux": 1.2, "autodude": 1.1}
     )
+    field_names: FieldNames = FieldNames()
 
 
 DEFAULT_SETTINGS = Settings()
@@ -179,7 +194,6 @@ def get_settings() -> Settings:
 
 @app.post("/settings", response_model=Settings)
 def update_settings(payload: Settings) -> Settings:
-    # Tallennus ES:ään
     try:
         save_settings(payload)
         return payload
@@ -190,10 +204,26 @@ def update_settings(payload: Settings) -> Settings:
 # Suggest
 @app.get("/suggest")
 def suggest(q: str, size: int = 8) -> list[dict[str, Any]]:
+    s = load_settings()
+    fn = s.field_names
+
+    # Build _source fields based on configured names
+    src_fields = {
+        "id",
+        "sku",
+        fn.brand_field or "brand",
+        fn.price_field or "price",
+        fn.image_field or "image",
+        fn.image_url_field or "image_url",
+        "name",
+        fn.in_stock_field or "in_stock",
+    }
+
     base_body = {
         "size": size,
-        "_source": ["id", "sku", "name", "brand", "price", "in_stock", "image", "image_url"],
+        "_source": [f for f in src_fields if f],
     }
+
     try:
         resp = _get_es_client().search(
             index=INDEX,
@@ -211,10 +241,11 @@ def suggest(q: str, size: int = 8) -> list[dict[str, Any]]:
         else:
             _raise_service_unavailable(error)
 
+    # Attach _id; UI voi muodostaa kuvat kenttien mukaan
     return [hit["_source"] | {"_id": hit["_id"]} for hit in resp["hits"]["hits"]]
 
 
-# Search that uses settings-based scoring
+# Search that uses settings-based scoring and field names
 @app.get("/search", response_model=SearchResponse)
 def search(
     q: str = Query("", description="Hakusana"),
@@ -227,8 +258,10 @@ def search(
     max_price: Optional[float] = Query(None),
     sort: Optional[str] = Query(None, description="relevance | price_asc | price_desc | newest"),
 ) -> SearchResponse:
-    s = load_settings()  # haetaan aina (voi myöhemmin cachettaa)
+    s = load_settings()
+    fn = s.field_names
 
+    # Query
     must: list[dict[str, Any]] = []
     if q:
         must.append(
@@ -236,84 +269,96 @@ def search(
                 "multi_match": {
                     "query": q,
                     "type": "best_fields",
-                    "fields": ["name^10", "brand^8", "category_path^3", "description"],
+                    "fields": ["name^10", (fn.brand_field or "brand") + "^8", (fn.category_field or "category_path") + "^3", "description"],
                     "fuzziness": "AUTO",
                     "operator": "and",
                 }
             }
         )
 
+    # Filters
     filters: list[dict[str, Any]] = []
-    if in_stock is not None:
-        filters.append({"term": {"in_stock": in_stock}})
-    if brand:
-        filters.append({"term": {"brand": brand.lower()}})
-    if category:
-        filters.append({"term": {"category_path": category}})
-    if min_price is not None or max_price is not None:
+    if in_stock is not None and fn.in_stock_field:
+        filters.append({"term": {fn.in_stock_field: in_stock}})
+    if brand and fn.brand_field:
+        filters.append({"term": {fn.brand_field: brand.lower()}})
+    if category and fn.category_field:
+        filters.append({"term": {fn.category_field: category}})
+    if (min_price is not None or max_price is not None) and fn.price_field:
         price_range: dict[str, Any] = {}
         if min_price is not None:
             price_range["gte"] = min_price
         if max_price is not None:
             price_range["lte"] = max_price
-        filters.append({"range": {"price": price_range}})
+        filters.append({"range": {fn.price_field: price_range}})
 
+    # Sort
     sort_clause: list[dict[str, Any]] | None = None
-    if sort == "price_asc":
-        sort_clause = [{"price": "asc"}]
-    elif sort == "price_desc":
-        sort_clause = [{"price": "desc"}]
-    elif sort == "newest":
-        sort_clause = [{"added_at": "desc"}]
+    if sort == "price_asc" and fn.price_field:
+        sort_clause = [{fn.price_field: "asc"}]
+    elif sort == "price_desc" and fn.price_field:
+        sort_clause = [{fn.price_field: "desc"}]
+    elif sort == "newest" and fn.added_at_field:
+        sort_clause = [{fn.added_at_field: "desc"}]
 
-    # Build scoring functions from settings
-    functions: list[dict[str, Any]] = [
-        {"weight": s.weights.in_stock_bonus, "filter": {"term": {"in_stock": True}}},
-        {
-            "gauss": {
-                "added_at": {
-                    "origin": "now",
-                    "scale": f"{s.weights.newness_decay_days}d",
-                    "decay": 0.5,
+    # Functions based on configured field names
+    functions: list[dict[str, Any]] = []
+
+    if fn.in_stock_field and s.weights.in_stock_bonus > 0:
+        functions.append({"weight": s.weights.in_stock_bonus, "filter": {"term": {fn.in_stock_field: True}}})
+
+    if fn.added_at_field:
+        functions.append(
+            {
+                "gauss": {
+                    fn.added_at_field: {
+                        "origin": "now",
+                        "scale": f"{s.weights.newness_decay_days}d",
+                        "decay": 0.5,
+                    }
                 }
             }
-        },
-        # Rating 0..5 (no modifier)
-        {
-            "field_value_factor": {
-                "field": "rating",
-                "factor": s.weights.rating,
-                "missing": 0.0,
-            }
-        },
-        # Reviews -> log1p to normalize big counts
-        {
-            "field_value_factor": {
-                "field": "reviews",
-                "factor": s.weights.reviews,
-                "modifier": "log1p",
-                "missing": 0.0,
-            }
-        },
-        # Recent sales (e.g. last 30d)
-        {
-            "field_value_factor": {
-                "field": "sales_30d",
-                "factor": s.weights.sales_30d,
-                "modifier": "log1p",
-                "missing": 0.0,
-            }
-        },
-    ]
+        )
 
-    # Brand boosts from settings (keyword field recommended)
-    if s.brand_boosts:
+    if fn.rating_field:
+        functions.append(
+            {"field_value_factor": {"field": fn.rating_field, "factor": s.weights.rating, "missing": 0.0}}
+        )
+    if fn.reviews_field:
+        functions.append(
+            {
+                "field_value_factor": {
+                    "field": fn.reviews_field,
+                    "factor": s.weights.reviews,
+                    "modifier": "log1p",
+                    "missing": 0.0,
+                }
+            }
+        )
+    if fn.sales30_field:
+        functions.append(
+            {
+                "field_value_factor": {
+                    "field": fn.sales30_field,
+                    "factor": s.weights.sales_30d,
+                    "modifier": "log1p",
+                    "missing": 0.0,
+                }
+            }
+        )
+
+    # Brand boosts
+    if s.brand_boosts and fn.brand_field:
         for bname, w in s.brand_boosts.items():
             try:
                 w_float = float(w)
             except Exception:
                 continue
-            functions.append({"filter": {"term": {"brand": bname.lower()}}, "weight": w_float})
+            functions.append({"filter": {"term": {fn.brand_field: bname.lower()}}, "weight": w_float})
+
+    # Aggregations using configured fields (fallback if missing)
+    brand_field = fn.brand_field or "brand"
+    category_field = fn.category_field or "category_path"
 
     body: dict[str, Any] = {
         "from": (page - 1) * size,
@@ -323,13 +368,13 @@ def search(
                 "query": {"bool": {"must": must or {"match_all": {}}, "filter": filters}},
                 "score_mode": "sum",
                 "boost_mode": "multiply",
-                "functions": functions,
+                "functions": functions or [{"weight": 1.0}],
             }
         },
         "aggs": {
-            "brand": {"terms": {"field": "brand", "size": 25}},
-            "category": {"terms": {"field": "category_path", "size": 25}},
-            "price_stats": {"stats": {"field": "price"}},
+            "brand": {"terms": {"field": brand_field, "size": 25}},
+            "category": {"terms": {"field": category_field, "size": 25}},
+            "price_stats": {"stats": {"field": fn.price_field or "price"}},
         },
         "_source": {"excludes": ["description"]},
     }
