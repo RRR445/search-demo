@@ -1,21 +1,23 @@
 """FastAPI application exposing search and analytics endpoints backed by Elasticsearch."""
 
+from __future__ import annotations
+
 import contextlib
 import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 from dotenv import load_dotenv
 from elasticsearch import Elasticsearch, TransportError
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from uuid import uuid4
 
-# Load environment variables from a local .env file when present.
+# Load envs from local .env when developing
 load_dotenv()
 
 # ---- Environment variables ----
@@ -26,58 +28,60 @@ INDEX = os.getenv("ELASTIC_INDEX", "products")
 
 def _init_es_client() -> Elasticsearch | None:
     """Create the Elasticsearch client when configuration is present."""
-
     if not ES_URL or not ES_KEY:
         return None
-
     try:
         return Elasticsearch(ES_URL, api_key=ES_KEY)
     except ValueError:
-        # Misconfiguration is treated as service unavailable at runtime.
+        # Misconfiguration -> treat as unavailable at runtime
         return None
 
 
-# ---- Elasticsearch client ----
+# ---- Elasticsearch client (lazy / best-effort) ----
 es = _init_es_client()
 
 # ---- FastAPI app + CORS ----
 app = FastAPI(title="Search Demo API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: Restrict origins in production deployments.
+    allow_origins=["*"],  # TODO: restrict to your production origins
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
+# ---- Static UI mount (optional but recommended) ----
 BASE_DIR = Path(__file__).resolve().parent
 UI_DIR = BASE_DIR / "ui"
-
 if UI_DIR.exists():
     app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui.index")
 
 
 @app.get("/index.html", response_class=HTMLResponse)
 def serve_index() -> str:
-    """Serve the bundled UI index file when present."""
-
+    """Serve the bundled UI index file when present (fallback for /index.html)."""
     for candidate in (UI_DIR / "index.html", BASE_DIR / "index.html"):
         if candidate.exists():
             return candidate.read_text(encoding="utf-8")
-
     return "<h1>index.html not found</h1>"
 
 
-# ---- Ensure the event index exists ----
+@app.get("/favicon.ico")
+def favicon() -> Response:
+    """Silence default /favicon.ico requests in logs (UI has its own data-URL)."""
+    return Response(status_code=204)
+
+
+# ---- Ensure the event index exists (best-effort) ----
 if es is not None:
-    with contextlib.suppress(Exception):  # pragma: no cover - initialization best-effort
+    with contextlib.suppress(Exception):  # init should never crash the app
         es.indices.create(
             index="search_events",
             ignore=400,
             mappings={
                 "properties": {
                     "ts": {"type": "date"},
-                    "type": {"type": "keyword"},
+                    "type": {"type": "keyword"},       # "search" | "click"
                     "query": {"type": "keyword"},
                     "queryId": {"type": "keyword"},
                     "product_id": {"type": "keyword"},
@@ -88,8 +92,7 @@ if es is not None:
 
 
 class SearchResponse(BaseModel):
-    """Model for search responses."""
-
+    """Response model for /search."""
     total: int
     hits: list[dict[str, Any]]
     aggs: dict[str, Any] | None = None
@@ -97,14 +100,10 @@ class SearchResponse(BaseModel):
 
 
 def _raise_service_unavailable(error: Exception) -> None:
-    """Raise a standardized 503 error when Elasticsearch is not reachable."""
-
     raise HTTPException(status_code=503, detail="Search backend unavailable") from error
 
 
 def _get_es_client() -> Elasticsearch:
-    """Return the configured Elasticsearch client or raise if unavailable."""
-
     if es is None:
         raise HTTPException(status_code=503, detail="Search backend unavailable")
     return es
@@ -112,32 +111,27 @@ def _get_es_client() -> Elasticsearch:
 
 @app.get("/")
 def root() -> dict[str, str]:
-    """Return basic service metadata."""
-
+    """Basic service metadata."""
     return {"name": "search-demo", "version": app.version or "unknown"}
 
 
 @app.get("/health")
 def health() -> dict[str, Any]:
     """Verify the API can reach Elasticsearch."""
-
     try:
         info = _get_es_client().info()
     except TransportError as error:
         _raise_service_unavailable(error)
-
     return {"ok": True, "es_version": info["version"]["number"]}
 
 
 @app.get("/suggest")
 def suggest(q: str, size: int = 8) -> list[dict[str, Any]]:
-    """Return quick autocomplete suggestions for the provided query."""
-
+    """Quick autocomplete suggestions; prefers name.ac, falls back to prefix."""
     base_body = {
         "size": size,
-        "_source": ["id", "sku", "name", "brand", "price", "in_stock"],
+        "_source": ["id", "sku", "name", "brand", "price", "in_stock", "image", "image_url"],
     }
-
     try:
         resp = _get_es_client().search(
             index=INDEX,
@@ -147,7 +141,7 @@ def suggest(q: str, size: int = 8) -> list[dict[str, Any]]:
             },
         )
     except TransportError as error:
-        # Missing analyzer/field? fall back to prefix search. Otherwise bubble up.
+        # If field/analyzer missing -> fallback
         if getattr(error, "status_code", None) == 400:
             try:
                 resp = _get_es_client().search(
@@ -177,8 +171,7 @@ def search(
     max_price: float | None = Query(None),
     sort: str | None = Query(None, description="relevance | price_asc | price_desc | newest"),
 ) -> SearchResponse:
-    """Perform the main product search with optional filters and scoring."""
-
+    """Main product search with filters, scoring and aggregations."""
     must: list[dict[str, Any]] = []
     if q:
         must.append(
@@ -187,12 +180,13 @@ def search(
                     "query": q,
                     "type": "best_fields",
                     "fields": [
-                        "name^8",
-                        "brand^5",
+                        "name^10",
+                        "brand^8",
                         "category_path^3",
                         "description",
                     ],
                     "fuzziness": "AUTO",
+                    "operator": "and",
                 }
             }
         )
@@ -218,7 +212,7 @@ def search(
     elif sort == "price_desc":
         sort_clause = [{"price": "desc"}]
     elif sort == "newest":
-        sort_clause = [{"added_at": "desc"}]
+        sort_clause = [{"added_at": "desc"}]  # requires added_at to be present
 
     body: dict[str, Any] = {
         "from": (page - 1) * size,
@@ -237,13 +231,11 @@ def search(
                     {"weight": 1.3, "filter": {"term": {"in_stock": True}}},
                     {
                         "gauss": {
-                            "added_at": {
-                                "origin": "now",
-                                "scale": "45d",
-                                "decay": 0.5,
-                            }
+                            "added_at": {"origin": "now", "scale": "45d", "decay": 0.5}
                         }
                     },
+                    # Optional brand boost example:
+                    # {"filter": {"terms": {"brand.keyword": ["purelux", "autodude"]}}, "weight": 1.5},
                 ],
             }
         },
@@ -252,7 +244,9 @@ def search(
             "category": {"terms": {"field": "category_path", "size": 25}},
             "price_stats": {"stats": {"field": "price"}},
         },
-        "_source": {"excludes": ["description"]},
+        "_source": {
+            "excludes": ["description"]  # keep payload light for the UI
+        },
     }
     if sort_clause:
         body["sort"] = sort_clause
@@ -290,7 +284,6 @@ def search(
 @app.post("/click")
 def click(product_id: str, queryId: str) -> dict[str, bool]:
     """Record a click event for relevance analysis."""
-
     try:
         _get_es_client().index(
             index="search_events",
