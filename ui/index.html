@@ -155,8 +155,29 @@
       return num.toFixed(2).replace('.', ',');
     }
 
+    function normalizeUrl(u) {
+      if (!u) return null;
+      let s = String(u).trim();
+      if (s.startsWith("//")) s = "https:" + s;      // schema-relative -> https
+      if (s.startsWith("http://")) s = "https://" + s.slice(7); // pakota https jos mahdollista
+      return s;
+    }
+
     function guessImg(h){
-      return h.image || h.image_url || h.imageUrl || h.main_image || h.img || null;
+      const candidates = [
+        h.image, h.image_url, h.imageUrl, h.main_image, h.img, h.thumbnail, h.thumb,
+        h.image_link, h["g:image_link"], h.picture, h.photo, h.media_url
+      ];
+      if (!candidates.some(Boolean) && h.images && typeof h.images === "object") {
+        const imgsObj = h.images;
+        for (const k of ["main","large","0","first"]) if (imgsObj[k]) candidates.push(imgsObj[k]);
+      }
+      for (const arrKey of ["images","photos","pictures","gallery"]) {
+        const v = h[arrKey];
+        if (Array.isArray(v) && v.length) candidates.push(v[0]);
+      }
+      const found = candidates.find(Boolean);
+      return normalizeUrl(found);
     }
 
     function oldPriceOf(h){
@@ -187,7 +208,6 @@
           return;
         }
 
-        // Facet: brand chips (top 12)
         const brands = (data.aggs?.brand ?? []).slice(0, 12);
         brands.forEach(b => {
           const chip = document.createElement('button');
@@ -205,23 +225,27 @@
 
     function renderResults(hits){
       els.results.innerHTML = '';
+
+      // debug: näytä ekan tuotteen kentät konsolissa (helpottaa kuvia)
+      if (hits && hits.length) {
+        console.debug("Sample product keys:", Object.keys(hits[0]));
+      }
+
       hits.forEach(h => {
         const imgUrl = guessImg(h);
         const oldP = oldPriceOf(h);
         const disc = discountPercent(h.price, oldP);
-        const rating = h.rating || h.review_rating || null;   // esim. 4.6
-        const reviews = h.reviews || h.review_count || null;  // esim. 10019
+        const rating = h.rating || h.review_rating || null;
+        const reviews = h.reviews || h.review_count || null;
         const inStock = h.in_stock === true;
 
         const card = document.createElement('div');
         card.className = 'product-card';
 
-        // banner
         const banner = document.createElement('div');
         banner.className = 'promo-banner';
         banner.innerHTML = '⭐ SUPERSUOSIO!! MYYNTIMENESTYS!! HUIPPU-ARVOSTELUT!! ⭐';
 
-        // image
         const imgWrap = document.createElement('div');
         imgWrap.className = 'img-wrap';
         const img = document.createElement('img');
@@ -229,7 +253,6 @@
         img.alt = h.name || 'Tuote';
         imgWrap.appendChild(img);
 
-        // discount badge
         if (disc != null) {
           const badge = document.createElement('div');
           badge.className = 'badge-discount';
@@ -237,11 +260,9 @@
           card.appendChild(badge);
         }
 
-        // body
         const body = document.createElement('div');
         body.className = 'card-body';
 
-        // rating line
         if (reviews || rating) {
           const line1 = document.createElement('div');
           line1.className = 'line';
@@ -261,18 +282,14 @@
           body.appendChild(line1);
         }
 
-        // usp line
         const line2 = document.createElement('div');
         line2.className = 'line usp';
-        const cb = document.createElement('span');
-        cb.className = 'checkbox';
-        line2.appendChild(cb);
+        const cb = document.createElement('span'); cb.className = 'checkbox';
         const uspTxt = document.createElement('span');
         uspTxt.textContent = inStock ? 'HELPPOA SUOJAA!' : 'Nopea toimitus';
-        line2.appendChild(uspTxt);
+        line2.append(cb, uspTxt);
         body.appendChild(line2);
 
-        // name + stock pill
         const name = document.createElement('div');
         name.className = 'name';
         name.textContent = h.name || '';
@@ -283,7 +300,6 @@
         stock.textContent = inStock ? 'Varastossa' : 'Tilaustuote';
         body.appendChild(stock);
 
-        // price row
         const priceRow = document.createElement('div');
         priceRow.className = 'price-row';
         const left = document.createElement('div');
@@ -299,12 +315,10 @@
         priceRow.append(left, right);
         body.appendChild(priceRow);
 
-        // CTA
         const btn = document.createElement('button');
         btn.className = 'buy-cta';
         btn.textContent = 'OSTA';
         btn.addEventListener('click', async () => {
-          // klikkiloki
           try {
             const productId = h.id || h.sku || h._id || '';
             if (productId && state.lastQueryId) {
@@ -327,7 +341,7 @@
       if(!q){ els.sugs.classList.remove('show'); els.sugs.innerHTML=''; return; }
       try {
         const data = await fetchJSON(`${API}/suggest?q=${encodeURIComponent(q)}&size=8`);
-        if(!data.length){ els.sugs.classList.remove('show'); els.sugs.innerHTML=''; return; }
+        if(!data.length){ els.sugs.classList.remove('show'); els.sgs='' ; return; }
         els.sugs.innerHTML = data.map((d,i)=>`<div class="sug-item" data-name="${htmlEscape(d.name)}">${htmlEscape(d.name)} ${d.brand?`<span class="muted">(${htmlEscape(d.brand)})</span>`:''}</div>`).join('');
         els.sugs.classList.add('show');
         sugIdx = -1;
@@ -362,9 +376,9 @@
       if (ev.key === 'Enter') {
         ev.preventDefault();
         if (sugIdx >= 0 && items.length) {
-          items[sugIdx].click();  // valitse ehdotus
+          items[sugIdx].click();
         } else {
-          els.sugs.classList.remove('show'); // suora haku
+          els.sugs.classList.remove('show');
           state.page = 1;
           doSearch();
         }
