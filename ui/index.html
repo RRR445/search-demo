@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <title>Search Demo UI</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- Favicon ettei /favicon.ico aiheuta 404:ää -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20128%20128'%3E%3Ctext y='.9em' font-size='96'%3E🔎%3C/text%3E%3C/svg%3E">
   <style>
     :root {
       --bg:#0b0c10; --card:#121318; --muted:#8a8fa0; --accent:#4ad295;
@@ -155,12 +157,15 @@
       return num.toFixed(2).replace('.', ',');
     }
 
+    // Kovempi normalisointi: pudota suhteelliset URL:t -> fallback-kuvaan
     function normalizeUrl(u) {
       if (!u) return null;
       let s = String(u).trim();
-      if (s.startsWith("//")) s = "https:" + s;      // schema-relative -> https
-      if (s.startsWith("http://")) s = "https://" + s.slice(7); // pakota https jos mahdollista
-      return s;
+      if (s.startsWith("http://")) s = "https://" + s.slice(7); // yritä aina https
+      if (s.startsWith("https://")) return s;
+      if (s.startsWith("//")) return "https:" + s;               // schema-relative -> https
+      // Suhteellinen tai pelkkä tiedostonimi -> ei kelpaa
+      return null;
     }
 
     function guessImg(h){
@@ -249,7 +254,8 @@
         const imgWrap = document.createElement('div');
         imgWrap.className = 'img-wrap';
         const img = document.createElement('img');
-        img.src = imgUrl || 'https://via.placeholder.com/500x400?text=Ei+kuvaa';
+        img.src = imgUrl || 'https://placehold.co/500x400?text=Ei%20kuvaa';
+        img.referrerPolicy = 'no-referrer';
         img.alt = h.name || 'Tuote';
         imgWrap.appendChild(img);
 
@@ -341,7 +347,7 @@
       if(!q){ els.sugs.classList.remove('show'); els.sugs.innerHTML=''; return; }
       try {
         const data = await fetchJSON(`${API}/suggest?q=${encodeURIComponent(q)}&size=8`);
-        if(!data.length){ els.sugs.classList.remove('show'); els.sgs='' ; return; }
+        if(!data.length){ els.sugs.classList.remove('show'); els.sugs.innerHTML=''; return; }
         els.sugs.innerHTML = data.map((d,i)=>`<div class="sug-item" data-name="${htmlEscape(d.name)}">${htmlEscape(d.name)} ${d.brand?`<span class="muted">(${htmlEscape(d.brand)})</span>`:''}</div>`).join('');
         els.sugs.classList.add('show');
         sugIdx = -1;
