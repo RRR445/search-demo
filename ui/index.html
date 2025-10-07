@@ -2,410 +2,179 @@
 <html lang="fi">
 <head>
   <meta charset="UTF-8" />
-  <title>Search Demo UI</title>
+  <title>Search Settings Admin</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <!-- Favicon ettei /favicon.ico aiheuta 404:ää -->
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20128%20128'%3E%3Ctext y='.9em' font-size='96'%3E🔎%3C/text%3E%3C/svg%3E">
   <style>
-    :root {
-      --bg:#0b0c10; --card:#121318; --muted:#8a8fa0; --accent:#4ad295;
-      --violet:#b03478; --violet-dark:#932c66; --red:#e53935; --border:#1c2130;
-    }
+    :root { --bg:#0b0c10; --card:#121318; --muted:#8a8fa0; --accent:#4ad295; --border:#1c2130; }
     * { box-sizing: border-box; }
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:#e8ebf1; }
-    .container { max-width:1200px; margin: 24px auto; padding: 0 16px; }
-    h1 { margin:0 0 12px 0; }
-    header { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
-    input[type="text"] { flex:1; min-width:260px; padding:12px 14px; border-radius:12px; border:1px solid #2a2f3a; background:#0f1116; color:#e8ebf1; outline:none; }
-    button, select, label { border-radius:12px; border:1px solid #2a2f3a; background:#0f1116; color:#e8ebf1; padding:10px 12px; }
-    button { cursor:pointer; }
-    .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .muted { color: var(--muted); }
-
-    .toprow { display:flex; align-items:center; justify-content:space-between; margin-top:12px; gap:12px; flex-wrap:wrap; }
-    .chips { display:flex; gap:8px; flex-wrap:wrap; }
-    .chip { border:1px solid #2a2f3a; background:#0f1116; padding:6px 10px; border-radius:999px; cursor:pointer; }
-    .chip.active { background:#17202f; border-color:#324159; }
-
-    .results { margin-top:16px; display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:16px; }
-    .empty { padding:24px; text-align:center; border:1px dashed #2a2f3a; border-radius:12px; margin-top:18px; }
-    footer { margin:40px 0 16px; text-align:center; color:var(--muted); font-size:.9rem; }
-
-    /* --- Product card --- */
-    .product-card {
-      position: relative; background:#fff; color:#111; border-radius:10px; overflow:hidden;
-      border:1px solid #e9e9ee; display:flex; flex-direction:column; min-height:420px;
-      box-shadow: 0 10px 30px rgba(0,0,0,.10);
-    }
-    .promo-banner {
-      background: var(--violet); color:#fff; text-align:center; font-size:.78rem; font-weight:800; padding:6px 8px;
-      letter-spacing:.3px;
-    }
-    .img-wrap { padding:10px 10px 0; display:flex; justify-content:center; align-items:center; }
-    .img-wrap img { width:100%; height:220px; object-fit:contain; background:#fafafa; border-radius:8px; }
-    .badge-discount {
-      position:absolute; top:14px; left:14px; background: var(--violet);
-      color:#fff; font-weight:900; padding:6px 10px; border-radius:6px; font-size:1rem;
-      box-shadow: 0 6px 14px rgba(176,52,120,.35);
-    }
-    .card-body { padding:12px 14px 0; display:flex; flex-direction:column; gap:6px; }
-    .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .stars { color:#ffb400; font-size:1.05rem; line-height:1; }
-    .review-count { color:#666; font-size:.95rem; }
-    .usp { display:flex; align-items:center; gap:6px; color:#2d6a4f; font-weight:700; }
-    .usp .checkbox { width:18px; height:18px; border-radius:4px; border:2px solid #2d6a4f; display:inline-block; position:relative; }
-    .usp .checkbox::after { content:""; position:absolute; width:10px; height:6px; border-left:3px solid #2d6a4f; border-bottom:3px solid #2d6a4f; transform:rotate(-45deg); left:2px; top:3px; }
-
-    .name { font-weight:900; font-size:1.05rem; line-height:1.2; margin-top:2px; }
-    .stock-pill { display:inline-block; padding:3px 8px; border-radius:999px; border:1px solid #c9d3dd; color:#2a6f3b; font-size:.8rem; background:#e9f7ef; }
-
-    .price-row { display:flex; justify-content:space-between; align-items:flex-end; margin-top:6px; }
-    .old-price { color:#777; text-decoration: line-through; font-size:1.0rem; }
-    .price-tag {
-      background: var(--red); color:#fff; font-weight:900; font-size:1.6rem; padding:6px 10px; border-radius:6px;
-      box-shadow: 0 8px 20px rgba(229,57,53,.35);
-    }
-
-    .buy-cta { background: var(--violet); color:#fff; padding:12px 12px; text-align:center; font-weight:900; letter-spacing:.3px;
-      border:0; border-top:1px solid #f0e2ea; cursor:pointer; margin-top:12px; }
-    .buy-cta:hover { background: var(--violet-dark); }
-
-    /* Autocomplete */
-    .suggest-box { position:relative; flex:1; min-width:260px; }
-    .suggestions { position:absolute; top:44px; left:0; right:0; background:#0f1116; border:1px solid #2a2f3a; border-radius:12px; overflow:hidden; z-index:20; display:none; }
-    .suggestions.show { display:block; }
-    .sug-item { padding:10px 12px; cursor:pointer; }
-    .sug-item:hover, .sug-item.active { background:#141823; }
+    .container { max-width:980px; margin: 24px auto; padding: 0 16px; }
+    h1 { margin:0 0 16px; }
+    .grid { display:grid; grid-template-columns: 1fr; gap:16px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; }
+    .row { display:flex; align-items:center; gap:12px; }
+    label { width:220px; color:#cfd3df; }
+    input[type="range"] { flex:1; }
+    input[type="number"], input[type="text"] { width:120px; padding:8px; border-radius:8px; border:1px solid #2a2f3a; background:#0f1116; color:#e8ebf1; }
+    textarea { width:100%; min-height:140px; padding:10px; border-radius:8px; border:1px solid #2a2f3a; background:#0f1116; color:#e8ebf1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .actions { display:flex; gap:10px; margin-top:12px; }
+    button { border-radius:10px; padding:10px 12px; border:1px solid #2a2f3a; background:#0f1116; color:#e8ebf1; cursor:pointer; }
+    .ok { color:#9ae6b4; }
+    .muted { color:var(--muted); }
+    .note { font-size:.9rem; color:var(--muted); }
+    .split { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    @media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>🔎 Search Demo</h1>
-
-    <header>
-      <div class="suggest-box">
-        <input id="q" type="text" placeholder="Hae tuotteita… (esim. painepesuri, vahashampoo)" autocomplete="off" />
-        <div id="sugs" class="suggestions"></div>
+    <h1>⚙️ Haku­painotusten hallinta</h1>
+    <div class="grid">
+      <div class="card">
+        <div class="row">
+          <label>Rating (0..5) kerroin</label>
+          <input id="rating" type="range" min="0" max="2" step="0.05">
+          <input id="ratingNum" type="number" step="0.05">
+        </div>
+        <div class="row">
+          <label>Arvostelujen paino (log1p)</label>
+          <input id="reviews" type="range" min="0" max="2" step="0.05">
+          <input id="reviewsNum" type="number" step="0.05">
+        </div>
+        <div class="row">
+          <label>Myynti 30d paino (log1p)</label>
+          <input id="sales" type="range" min="0" max="3" step="0.1">
+          <input id="salesNum" type="number" step="0.1">
+        </div>
+        <div class="row">
+          <label>Varastosaatavuus bonus</label>
+          <input id="stock" type="range" min="1" max="3" step="0.1">
+          <input id="stockNum" type="number" step="0.1">
+        </div>
+        <div class="row">
+          <label>Uutuuden vaikutus (päivää)</label>
+          <input id="decay" type="range" min="7" max="120" step="1">
+          <input id="decayNum" type="number" step="1">
+        </div>
       </div>
-      <div class="toolbar">
-        <label><input id="stock" type="checkbox" /> &nbsp;Vain varastossa</label>
-        <select id="sort">
-          <option value="">Relevanssi</option>
-          <option value="price_asc">Hinta ↑</option>
-          <option value="price_desc">Hinta ↓</option>
-          <option value="newest">Uusimmat</option>
-        </select>
-        <button id="searchBtn">Hae</button>
+
+      <div class="card">
+        <div class="row" style="align-items:flex-start">
+          <label>Brändi­boostit (JSON)</label>
+          <textarea id="brandBoosts" placeholder='{"purelux":1.2,"autodude":1.1}'></textarea>
+        </div>
+        <div class="note">Muoto: avain = brand, arvo = weight (esim. 1.2). Esimerkki: {"purelux":1.2,"autodude":1.1}</div>
       </div>
-    </header>
 
-    <div class="toprow">
-      <div id="total" class="muted">–</div>
-      <div class="chips" id="brandChips"></div>
+      <div class="card">
+        <div class="actions">
+          <button id="saveBtn">💾 Tallenna</button>
+          <button id="reloadBtn">🔄 Lataa</button>
+          <span id="status" class="muted"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="split">
+          <div>
+            <div class="row">
+              <label>Testikysely</label>
+              <input id="q" type="text" placeholder="esim. vaha, painepesuri">
+            </div>
+            <div class="actions">
+              <button id="testBtn">🔍 Suorita testi</button>
+              <span class="muted">Tulostaa top 5 nimen & scoret</span>
+            </div>
+          </div>
+          <pre id="out" style="margin:0;white-space:pre-wrap;background:#0f1116;border:1px solid #2a2f3a;padding:10px;border-radius:8px;"></pre>
+        </div>
+      </div>
     </div>
-
-    <div id="results" class="results"></div>
-
-    <div id="empty" class="empty" style="display:none;">
-      Ei tuloksia. Kokeile toista hakusanaa tai poista suodattimia.
-    </div>
-
-    <footer>Powered by FastAPI + Elasticsearch</footer>
   </div>
 
   <script>
-    const API = window.API_BASE || location.origin; // toimii suoraan Renderissä
+    const API = location.origin;
+
     const els = {
-      q: document.getElementById('q'),
-      sugs: document.getElementById('sugs'),
+      rating: document.getElementById('rating'),
+      reviews: document.getElementById('reviews'),
+      sales: document.getElementById('sales'),
       stock: document.getElementById('stock'),
-      sort: document.getElementById('sort'),
-      total: document.getElementById('total'),
-      results: document.getElementById('results'),
-      empty: document.getElementById('empty'),
-      searchBtn: document.getElementById('searchBtn'),
-      brandChips: document.getElementById('brandChips'),
+      decay: document.getElementById('decay'),
+      ratingNum: document.getElementById('ratingNum'),
+      reviewsNum: document.getElementById('reviewsNum'),
+      salesNum: document.getElementById('salesNum'),
+      stockNum: document.getElementById('stockNum'),
+      decayNum: document.getElementById('decayNum'),
+      brandBoosts: document.getElementById('brandBoosts'),
+      saveBtn: document.getElementById('saveBtn'),
+      reloadBtn: document.getElementById('reloadBtn'),
+      q: document.getElementById('q'),
+      testBtn: document.getElementById('testBtn'),
+      out: document.getElementById('out'),
+      status: document.getElementById('status'),
     };
 
-    let state = { page: 1, size: 24, brand: null, category: null, lastQueryId: null, results: {hits:[], aggs:{}} };
+    function bind(a, b){
+      a.addEventListener('input', ()=> b.value = a.value);
+      b.addEventListener('input', ()=> a.value = b.value);
+    }
+    bind(els.rating, els.ratingNum);
+    bind(els.reviews, els.reviewsNum);
+    bind(els.sales, els.salesNum);
+    bind(els.stock, els.stockNum);
+    bind(els.decay, els.decayNum);
 
-    function htmlEscape(s){ return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
-    async function fetchJSON(url, options){
-      const r = await fetch(url, options);
-      if(!r.ok) throw new Error(await r.text());
-      return r.json();
+    async function loadSettings(){
+      els.status.textContent = 'Ladataan…';
+      const r = await fetch(`${API}/settings`);
+      const s = await r.json();
+      els.rating.value = els.ratingNum.value = s.weights.rating ?? 0.4;
+      els.reviews.value = els.reviewsNum.value = s.weights.reviews ?? 0.2;
+      els.sales.value = els.salesNum.value = s.weights.sales_30d ?? 0.8;
+      els.stock.value = els.stockNum.value = s.weights.in_stock_bonus ?? 1.3;
+      els.decay.value = els.decayNum.value = s.weights.newness_decay_days ?? 45;
+      els.brandBoosts.value = JSON.stringify(s.brand_boosts ?? {}, null, 2);
+      els.status.textContent = '';
     }
 
-    function buildQuery(){
-      const params = new URLSearchParams();
+    async function saveSettings(){
+      els.status.textContent = 'Tallennetaan…';
+      let boosts = {};
+      try { boosts = JSON.parse(els.brandBoosts.value || '{}'); }
+      catch(e){ alert('Brandiboostien JSON ei kelpaa'); return; }
+
+      const payload = {
+        weights: {
+          rating: parseFloat(els.rating.value),
+          reviews: parseFloat(els.reviews.value),
+          sales_30d: parseFloat(els.sales.value),
+          in_stock_bonus: parseFloat(els.stock.value),
+          newness_decay_days: parseInt(els.decay.value, 10)
+        },
+        brand_boosts: boosts
+      };
+
+      const r = await fetch(`${API}/settings`, { method:'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      if(!r.ok){ els.status.textContent = 'Virhe tallennuksessa'; return; }
+      els.status.textContent = '✅ Tallennettu';
+      setTimeout(()=> els.status.textContent = '', 1500);
+    }
+
+    async function testSearch(){
       const q = els.q.value.trim();
-      if(q) params.set('q', q);
-      params.set('page', state.page);
-      params.set('size', state.size);
-      if(els.stock.checked) params.set('in_stock', 'true');
-      if(state.brand) params.set('brand', state.brand);
-      if(state.category) params.set('category', state.category);
-      if(els.sort.value) params.set('sort', els.sort.value);
-      return params.toString();
+      const url = `${API}/search?` + new URLSearchParams({ q, size: 5 });
+      const r = await fetch(url);
+      const data = await r.json();
+      const lines = (data.hits || []).map(h => `${(h._score??'').toFixed ? h._score.toFixed(2) : h._score}  |  ${h.name}  ${h.brand?`(${h.brand})`:''}`);
+      els.out.textContent = lines.join('\n') || 'Ei tuloksia.';
     }
 
-    function fmtPrice(n){
-      if (n == null || n === '') return '';
-      const num = Number(n);
-      if (Number.isNaN(num)) return String(n);
-      return num.toFixed(2).replace('.', ',');
-    }
+    els.reloadBtn.addEventListener('click', loadSettings);
+    els.saveBtn.addEventListener('click', saveSettings);
+    els.testBtn.addEventListener('click', testSearch);
 
-    // Kovempi normalisointi: pudota suhteelliset URL:t -> fallback-kuvaan
-    function normalizeUrl(u) {
-      if (!u) return null;
-      let s = String(u).trim();
-      if (s.startsWith("http://")) s = "https://" + s.slice(7); // yritä aina https
-      if (s.startsWith("https://")) return s;
-      if (s.startsWith("//")) return "https:" + s;               // schema-relative -> https
-      // Suhteellinen tai pelkkä tiedostonimi -> ei kelpaa
-      return null;
-    }
-
-    function guessImg(h){
-      const candidates = [
-        h.image, h.image_url, h.imageUrl, h.main_image, h.img, h.thumbnail, h.thumb,
-        h.image_link, h["g:image_link"], h.picture, h.photo, h.media_url
-      ];
-      if (!candidates.some(Boolean) && h.images && typeof h.images === "object") {
-        const imgsObj = h.images;
-        for (const k of ["main","large","0","first"]) if (imgsObj[k]) candidates.push(imgsObj[k]);
-      }
-      for (const arrKey of ["images","photos","pictures","gallery"]) {
-        const v = h[arrKey];
-        if (Array.isArray(v) && v.length) candidates.push(v[0]);
-      }
-      const found = candidates.find(Boolean);
-      return normalizeUrl(found);
-    }
-
-    function oldPriceOf(h){
-      return h.old_price || h.list_price || h.compare_at_price || h.price_old || null;
-    }
-
-    function discountPercent(price, oldPrice){
-      if(!price || !oldPrice) return null;
-      const p = Number(price), o = Number(oldPrice);
-      if(!isFinite(p) || !isFinite(o) || o <= 0 || p >= o) return null;
-      return Math.round((1 - (p/o)) * 100);
-    }
-
-    async function doSearch(){
-      els.results.innerHTML = '<div class="muted">Haetaan…</div>';
-      els.empty.style.display = 'none';
-      els.brandChips.innerHTML = '';
-
-      try {
-        const data = await fetchJSON(`${API}/search?${buildQuery()}`);
-        state.results = data;
-        state.lastQueryId = data.queryId || null;
-
-        els.total.textContent = `Tuloksia: ${data.total}`;
-        if(data.total === 0){
-          els.results.innerHTML = '';
-          els.empty.style.display = 'block';
-          return;
-        }
-
-        const brands = (data.aggs?.brand ?? []).slice(0, 12);
-        brands.forEach(b => {
-          const chip = document.createElement('button');
-          chip.className = 'chip' + (state.brand === b.key ? ' active' : '');
-          chip.textContent = `${b.key} (${b.doc_count})`;
-          chip.onclick = () => { state.brand = (state.brand === b.key ? null : b.key); state.page=1; doSearch(); };
-          els.brandChips.appendChild(chip);
-        });
-
-        renderResults(data.hits || []);
-      } catch (e){
-        els.results.innerHTML = `<div class="muted">Virhe haussa: ${htmlEscape(e.message)}</div>`;
-      }
-    }
-
-    function renderResults(hits){
-      els.results.innerHTML = '';
-
-      // debug: näytä ekan tuotteen kentät konsolissa (helpottaa kuvia)
-      if (hits && hits.length) {
-        console.debug("Sample product keys:", Object.keys(hits[0]));
-      }
-
-      hits.forEach(h => {
-        const imgUrl = guessImg(h);
-        const oldP = oldPriceOf(h);
-        const disc = discountPercent(h.price, oldP);
-        const rating = h.rating || h.review_rating || null;
-        const reviews = h.reviews || h.review_count || null;
-        const inStock = h.in_stock === true;
-
-        const card = document.createElement('div');
-        card.className = 'product-card';
-
-        const banner = document.createElement('div');
-        banner.className = 'promo-banner';
-        banner.innerHTML = '⭐ SUPERSUOSIO!! MYYNTIMENESTYS!! HUIPPU-ARVOSTELUT!! ⭐';
-
-        const imgWrap = document.createElement('div');
-        imgWrap.className = 'img-wrap';
-        const img = document.createElement('img');
-        img.src = imgUrl || 'https://placehold.co/500x400?text=Ei%20kuvaa';
-        img.referrerPolicy = 'no-referrer';
-        img.alt = h.name || 'Tuote';
-        imgWrap.appendChild(img);
-
-        if (disc != null) {
-          const badge = document.createElement('div');
-          badge.className = 'badge-discount';
-          badge.textContent = `-${disc}%`;
-          card.appendChild(badge);
-        }
-
-        const body = document.createElement('div');
-        body.className = 'card-body';
-
-        if (reviews || rating) {
-          const line1 = document.createElement('div');
-          line1.className = 'line';
-          if (rating) {
-            const full = Math.round(Number(rating));
-            const stars = document.createElement('span');
-            stars.className = 'stars';
-            stars.textContent = '★'.repeat(full) + '☆'.repeat(Math.max(0, 5-full));
-            line1.appendChild(stars);
-          }
-          if (reviews) {
-            const rc = document.createElement('span');
-            rc.className = 'review-count';
-            rc.textContent = `(${reviews})`;
-            line1.appendChild(rc);
-          }
-          body.appendChild(line1);
-        }
-
-        const line2 = document.createElement('div');
-        line2.className = 'line usp';
-        const cb = document.createElement('span'); cb.className = 'checkbox';
-        const uspTxt = document.createElement('span');
-        uspTxt.textContent = inStock ? 'HELPPOA SUOJAA!' : 'Nopea toimitus';
-        line2.append(cb, uspTxt);
-        body.appendChild(line2);
-
-        const name = document.createElement('div');
-        name.className = 'name';
-        name.textContent = h.name || '';
-        body.appendChild(name);
-
-        const stock = document.createElement('div');
-        stock.className = 'stock-pill';
-        stock.textContent = inStock ? 'Varastossa' : 'Tilaustuote';
-        body.appendChild(stock);
-
-        const priceRow = document.createElement('div');
-        priceRow.className = 'price-row';
-        const left = document.createElement('div');
-        if (oldP) {
-          const op = document.createElement('div');
-          op.className = 'old-price';
-          op.textContent = `${fmtPrice(oldP)} €`;
-          left.appendChild(op);
-        }
-        const right = document.createElement('div');
-        right.className = 'price-tag';
-        right.textContent = `${fmtPrice(h.price)} €`;
-        priceRow.append(left, right);
-        body.appendChild(priceRow);
-
-        const btn = document.createElement('button');
-        btn.className = 'buy-cta';
-        btn.textContent = 'OSTA';
-        btn.addEventListener('click', async () => {
-          try {
-            const productId = h.id || h.sku || h._id || '';
-            if (productId && state.lastQueryId) {
-              await fetch(`${API}/click?product_id=${encodeURIComponent(productId)}&queryId=${encodeURIComponent(state.lastQueryId)}`, { method:'POST' });
-            }
-          } catch(_) {}
-          btn.textContent = '✅ LISÄTTY';
-          setTimeout(()=>btn.textContent='OSTA', 1200);
-        });
-
-        card.append(banner, imgWrap, body, btn);
-        els.results.appendChild(card);
-      });
-    }
-
-    // Autocomplete
-    let sugIdx = -1;
-    async function suggest(){
-      const q = els.q.value.trim();
-      if(!q){ els.sugs.classList.remove('show'); els.sugs.innerHTML=''; return; }
-      try {
-        const data = await fetchJSON(`${API}/suggest?q=${encodeURIComponent(q)}&size=8`);
-        if(!data.length){ els.sugs.classList.remove('show'); els.sugs.innerHTML=''; return; }
-        els.sugs.innerHTML = data.map((d,i)=>`<div class="sug-item" data-name="${htmlEscape(d.name)}">${htmlEscape(d.name)} ${d.brand?`<span class="muted">(${htmlEscape(d.brand)})</span>`:''}</div>`).join('');
-        els.sugs.classList.add('show');
-        sugIdx = -1;
-      } catch(e){ /* silent */ }
-    }
-    els.sugs.addEventListener('click', (ev)=>{
-      const item = ev.target.closest('.sug-item');
-      if(!item) return;
-      els.q.value = item.dataset.name;
-      els.sugs.classList.remove('show');
-      state.page = 1;
-      doSearch();
-    });
-
-    // Events
-    els.q.addEventListener('input', () => { suggest(); });
-    els.q.addEventListener('keydown', (ev)=>{
-      const items = Array.from(els.sugs.querySelectorAll('.sug-item'));
-
-      if (ev.key === 'ArrowDown' && items.length) {
-        ev.preventDefault();
-        sugIdx = Math.min(sugIdx + 1, items.length - 1);
-        items.forEach((n,i)=>n.classList.toggle('active', i===sugIdx));
-        return;
-      }
-      if (ev.key === 'ArrowUp' && items.length) {
-        ev.preventDefault();
-        sugIdx = Math.max(sugIdx - 1, 0);
-        items.forEach((n,i)=>n.classList.toggle('active', i===sugIdx));
-        return;
-      }
-      if (ev.key === 'Enter') {
-        ev.preventDefault();
-        if (sugIdx >= 0 && items.length) {
-          items[sugIdx].click();
-        } else {
-          els.sugs.classList.remove('show');
-          state.page = 1;
-          doSearch();
-        }
-        return;
-      }
-      if (ev.key === 'Escape') {
-        els.sugs.classList.remove('show');
-      }
-    });
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('.suggest-box')) {
-        els.sugs.classList.remove('show');
-      }
-    });
-
-    els.searchBtn.addEventListener('click', ()=>{ state.page=1; doSearch(); });
-    els.sort.addEventListener('change', ()=>{ state.page=1; doSearch(); });
-    els.stock.addEventListener('change', ()=>{ state.page=1; doSearch(); });
-
-    // Initial
-    doSearch();
+    loadSettings();
   </script>
 </body>
 </html>
