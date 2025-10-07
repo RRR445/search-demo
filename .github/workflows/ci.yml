@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: [ "main" ]
   pull_request:
 
 jobs:
@@ -21,8 +21,16 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          # perusriippuvuudet + työkalut
           pip install -r requirements.txt ruff black pytest httpx
 
+      # ---- AUTOFIX (tekee import-järjestyksen ja muotoilun kuntoon CI:ssä) ----
+      - name: Format (auto-fix in CI)
+        run: |
+          ruff check --fix .
+          black .
+
+      # ---- Varmistetaan, ettei jäänyt mitään ----
       - name: Lint with Ruff
         run: ruff check .
 
@@ -31,6 +39,8 @@ jobs:
 
       - name: Run tests
         env:
-          ELASTIC_URL: http://localhost
+          # Dummy-arvot, jotta app.py import onnistuu ilman salaisuuksia
+          ELASTIC_URL: https://example.com:443
           ELASTIC_API_KEY: dummy
+          ELASTIC_INDEX: products
         run: pytest -q
