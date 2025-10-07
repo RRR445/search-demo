@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from dotenv import load_dotenv
 from elasticsearch import Elasticsearch, TransportError
@@ -15,7 +16,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from uuid import uuid4
 
 # Load envs from local .env when developing
 load_dotenv()
@@ -50,7 +50,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---- Static UI mount (optional but recommended) ----
+# ---- Static UI mount ----
 BASE_DIR = Path(__file__).resolve().parent
 UI_DIR = BASE_DIR / "ui"
 if UI_DIR.exists():
@@ -68,20 +68,20 @@ def serve_index() -> str:
 
 @app.get("/favicon.ico")
 def favicon() -> Response:
-    """Silence default /favicon.ico requests in logs (UI has its own data-URL)."""
+    """Silence default /favicon.ico requests."""
     return Response(status_code=204)
 
 
 # ---- Ensure the event index exists (best-effort) ----
 if es is not None:
-    with contextlib.suppress(Exception):  # init should never crash the app
+    with contextlib.suppress(Exception):
         es.indices.create(
             index="search_events",
             ignore=400,
             mappings={
                 "properties": {
                     "ts": {"type": "date"},
-                    "type": {"type": "keyword"},       # "search" | "click"
+                    "type": {"type": "keyword"},
                     "query": {"type": "keyword"},
                     "queryId": {"type": "keyword"},
                     "product_id": {"type": "keyword"},
@@ -111,13 +111,11 @@ def _get_es_client() -> Elasticsearch:
 
 @app.get("/")
 def root() -> dict[str, str]:
-    """Basic service metadata."""
     return {"name": "search-demo", "version": app.version or "unknown"}
 
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    """Verify the API can reach Elasticsearch."""
     try:
         info = _get_es_client().info()
     except TransportError as error:
@@ -127,7 +125,6 @@ def health() -> dict[str, Any]:
 
 @app.get("/suggest")
 def suggest(q: str, size: int = 8) -> list[dict[str, Any]]:
-    """Quick autocomplete suggestions; prefers name.ac, falls back to prefix."""
     base_body = {
         "size": size,
         "_source": ["id", "sku", "name", "brand", "price", "in_stock", "image", "image_url"],
@@ -141,7 +138,6 @@ def suggest(q: str, size: int = 8) -> list[dict[str, Any]]:
             },
         )
     except TransportError as error:
-        # If field/analyzer missing -> fallback
         if getattr(error, "status_code", None) == 400:
             try:
                 resp = _get_es_client().search(
@@ -171,7 +167,6 @@ def search(
     max_price: float | None = Query(None),
     sort: str | None = Query(None, description="relevance | price_asc | price_desc | newest"),
 ) -> SearchResponse:
-    """Main product search with filters, scoring and aggregations."""
     must: list[dict[str, Any]] = []
     if q:
         must.append(
@@ -179,12 +174,7 @@ def search(
                 "multi_match": {
                     "query": q,
                     "type": "best_fields",
-                    "fields": [
-                        "name^10",
-                        "brand^8",
-                        "category_path^3",
-                        "description",
-                    ],
+                    "fields": ["name^10", "brand^8", "category_path^3", "description"],
                     "fuzziness": "AUTO",
                     "operator": "and",
                 }
@@ -212,30 +202,19 @@ def search(
     elif sort == "price_desc":
         sort_clause = [{"price": "desc"}]
     elif sort == "newest":
-        sort_clause = [{"added_at": "desc"}]  # requires added_at to be present
+        sort_clause = [{"added_at": "desc"}]
 
     body: dict[str, Any] = {
         "from": (page - 1) * size,
         "size": size,
         "query": {
             "function_score": {
-                "query": {
-                    "bool": {
-                        "must": must or {"match_all": {}},
-                        "filter": filters,
-                    }
-                },
+                "query": {"bool": {"must": must or {"match_all": {}}, "filter": filters}},
                 "score_mode": "sum",
                 "boost_mode": "multiply",
                 "functions": [
                     {"weight": 1.3, "filter": {"term": {"in_stock": True}}},
-                    {
-                        "gauss": {
-                            "added_at": {"origin": "now", "scale": "45d", "decay": 0.5}
-                        }
-                    },
-                    # Optional brand boost example:
-                    # {"filter": {"terms": {"brand.keyword": ["purelux", "autodude"]}}, "weight": 1.5},
+                    {"gauss": {"added_at": {"origin": "now", "scale": "45d", "decay": 0.5}}},
                 ],
             }
         },
@@ -244,9 +223,7 @@ def search(
             "category": {"terms": {"field": "category_path", "size": 25}},
             "price_stats": {"stats": {"field": "price"}},
         },
-        "_source": {
-            "excludes": ["description"]  # keep payload light for the UI
-        },
+        "_source": {"excludes": ["description"]},
     }
     if sort_clause:
         body["sort"] = sort_clause
@@ -256,26 +233,15 @@ def search(
     except TransportError as error:
         _raise_service_unavailable(error)
 
-    hits = [
-        hit["_source"] | {"_id": hit["_id"], "_score": hit.get("_score")}
-        for hit in resp["hits"]["hits"]
-    ]
+    hits = [hit["_source"] | {"_id": hit["_id"], "_score": hit.get("_score")} for hit in resp["hits"]["hits"]]
     total = resp["hits"]["total"]["value"]
-    aggs = {
-        key: (value.get("buckets", value))
-        for key, value in (resp.get("aggregations") or {}).items()
-    }
+    aggs = {key: (value.get("buckets", value)) for key, value in (resp.get("aggregations") or {}).items()}
 
     query_id = str(uuid4())
     with contextlib.suppress(TransportError):
         _get_es_client().index(
             index="search_events",
-            document={
-                "ts": datetime.utcnow(),
-                "type": "search",
-                "query": q,
-                "queryId": query_id,
-            },
+            document={"ts": datetime.utcnow(), "type": "search", "query": q, "queryId": query_id},
         )
 
     return SearchResponse(total=total, hits=hits, aggs=aggs, queryId=query_id)
@@ -283,18 +249,11 @@ def search(
 
 @app.post("/click")
 def click(product_id: str, queryId: str) -> dict[str, bool]:
-    """Record a click event for relevance analysis."""
     try:
         _get_es_client().index(
             index="search_events",
-            document={
-                "ts": datetime.utcnow(),
-                "type": "click",
-                "product_id": product_id,
-                "queryId": queryId,
-            },
+            document={"ts": datetime.utcnow(), "type": "click", "product_id": product_id, "queryId": queryId},
         )
     except TransportError as error:
         _raise_service_unavailable(error)
-
     return {"ok": True}
