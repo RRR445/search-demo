@@ -17,10 +17,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-# Load envs from local .env when developing
 load_dotenv()
 
-# ---- Environment variables ----
 ES_URL = os.getenv("ELASTIC_URL")
 ES_KEY = os.getenv("ELASTIC_API_KEY")
 INDEX = os.getenv("ELASTIC_INDEX", "products")
@@ -33,24 +31,20 @@ def _init_es_client() -> Elasticsearch | None:
     try:
         return Elasticsearch(ES_URL, api_key=ES_KEY)
     except ValueError:
-        # Misconfiguration -> treat as unavailable at runtime
         return None
 
 
-# ---- Elasticsearch client (lazy / best-effort) ----
 es = _init_es_client()
 
-# ---- FastAPI app + CORS ----
 app = FastAPI(title="Search Demo API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: restrict to your production origins
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# ---- Static UI mount ----
 BASE_DIR = Path(__file__).resolve().parent
 UI_DIR = BASE_DIR / "ui"
 if UI_DIR.exists():
@@ -59,7 +53,7 @@ if UI_DIR.exists():
 
 @app.get("/index.html", response_class=HTMLResponse)
 def serve_index() -> str:
-    """Serve the bundled UI index file when present (fallback for /index.html)."""
+    """Serve index.html for UI."""
     for candidate in (UI_DIR / "index.html", BASE_DIR / "index.html"):
         if candidate.exists():
             return candidate.read_text(encoding="utf-8")
@@ -68,11 +62,10 @@ def serve_index() -> str:
 
 @app.get("/favicon.ico")
 def favicon() -> Response:
-    """Silence default /favicon.ico requests."""
+    """Silence favicon requests."""
     return Response(status_code=204)
 
 
-# ---- Ensure the event index exists (best-effort) ----
 if es is not None:
     with contextlib.suppress(Exception):
         es.indices.create(
@@ -92,7 +85,6 @@ if es is not None:
 
 
 class SearchResponse(BaseModel):
-    """Response model for /search."""
     total: int
     hits: list[dict[str, Any]]
     aggs: dict[str, Any] | None = None
@@ -233,7 +225,10 @@ def search(
     except TransportError as error:
         _raise_service_unavailable(error)
 
-    hits = [hit["_source"] | {"_id": hit["_id"], "_score": hit.get("_score")} for hit in resp["hits"]["hits"]]
+    hits = [
+        hit["_source"] | {"_id": hit["_id"], "_score": hit.get("_score")}
+        for hit in resp["hits"]["hits"]
+    ]
     total = resp["hits"]["total"]["value"]
     aggs = {key: (value.get("buckets", value)) for key, value in (resp.get("aggregations") or {}).items()}
 
