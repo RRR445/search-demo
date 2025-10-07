@@ -17,7 +17,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+
 load_dotenv()
+
 
 ES_URL = os.getenv("ELASTIC_URL")
 ES_KEY = os.getenv("ELASTIC_API_KEY")
@@ -36,14 +38,16 @@ def _init_es_client() -> Elasticsearch | None:
 
 es = _init_es_client()
 
+
 app = FastAPI(title="Search Demo API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # TODO: rajaa tuotantoon omaan domainiin
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
 
 BASE_DIR = Path(__file__).resolve().parent
 UI_DIR = BASE_DIR / "ui"
